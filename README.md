@@ -1,3 +1,4 @@
+
 # 海賊の宝石分配問題：マルチエージェント強化学習
 
 このプロジェクトは、「海賊の宝石分配問題」に不確実性（確率的な提案権の移行）と有限のリスク（命の重さ）を導入したマルチエージェント強化学習シミュレーション環境です。
@@ -28,3 +29,50 @@
 ```bash
 python -m venv venv
 venv\Scripts\activate
+
+```
+
+**macOS / Linux の場合:**
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+
+```
+
+3. 以下のコマンドで必要なパッケージをインストールします。
+
+```bash
+pip install -r requirements.txt
+
+```
+
+## 実行方法
+
+学習スクリプトを実行して、エージェントの訓練を開始します。
+
+```bash
+python train.py
+
+```
+
+### 学習パラメータの調整
+
+`train.py` の実行時に引数を渡すことで、ハイパーパラメータを調整できます。
+
+```bash
+python train.py --epoch 100 --batch-size 128 --lr 0.001
+
+```
+
+## ファイル構成
+
+* **`env.py`**: PettingZoo AECEnvを継承したゲーム環境のロジック。
+* **`network.py`**: PyTorchを用いたDQNのネットワークアーキテクチャ。
+* **`train.py`**: Tianshouを用いた学習のパイプライン。
+* **`requirements.txt`**: 必要なPythonパッケージのリスト。
+* **`.gitignore`**: Gitのバージョン管理から除外するファイルのリスト。
+
+```
+
+```
