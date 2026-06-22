@@ -4,8 +4,8 @@ import numpy as np
 from gymnasium.spaces import Discrete, Box, Dict
 from pettingzoo import AECEnv
 
-# 分配パターンの全列挙（合計10になる5つの非負整数の組み合わせ）
-def generate_distributions(total_gems=10, num_agents=5):
+# 分配パターンの全列挙（合計total_gemsになるnum_agents個の非負整数の組み合わせ）
+def generate_distributions(total_gems, num_agents):
     distributions = []
     for bars in itertools.combinations(range(total_gems + num_agents - 1), num_agents - 1):
         dist = []
@@ -17,30 +17,38 @@ def generate_distributions(total_gems=10, num_agents=5):
         distributions.append(dist)
     return distributions
 
-DISTRIBUTIONS = generate_distributions()
-NUM_DISTRIBUTIONS = len(DISTRIBUTIONS)
-
-ACTION_YES = NUM_DISTRIBUTIONS
-ACTION_NO = NUM_DISTRIBUTIONS + 1
-TOTAL_ACTIONS = NUM_DISTRIBUTIONS + 2
-
 class PirateGemEnv(AECEnv):
-    metadata = {'render_modes': ['human'], "name": "pirate_gem_v0"}
+    metadata = {'render_modes': ['human'], "name": "pirate_gem_v1"}
 
-    def __init__(self, L=1.5, total_gems=10):
+    def __init__(self, config):
         super().__init__()
-        self.L = L
-        self.total_gems = total_gems
-        self.possible_agents = ["agent_A", "agent_B", "agent_C", "agent_D", "agent_E"]
+        # configから環境設定を読み込む
+        self.L = config.get("L", 1.5)
+        self.total_gems = config.get("total_gems", 10)
+        self.n_agents = config.get("num_agents", 5)
+        
+        # エージェント名と権力ウェイトの設定
+        self.possible_agents = [f"agent_{chr(65+i)}" for i in range(self.n_agents)]
         self.agent_name_mapping = dict(zip(self.possible_agents, list(range(len(self.possible_agents)))))
         
-        self.agent_weights = np.array([10.0, 8.0, 6.0, 4.0, 2.0], dtype=np.float32)
+        default_weights = [10.0 - i for i in range(self.n_agents)] # デフォルト値
+        self.agent_weights = np.array(config.get("agent_weights", default_weights), dtype=np.float32)
         
-        self.action_spaces = {agent: Discrete(TOTAL_ACTIONS) for agent in self.possible_agents}
+        # 行動空間の動的計算
+        self.DISTRIBUTIONS = generate_distributions(self.total_gems, self.n_agents)
+        self.NUM_DISTRIBUTIONS = len(self.DISTRIBUTIONS)
+        self.ACTION_YES = self.NUM_DISTRIBUTIONS
+        self.ACTION_NO = self.NUM_DISTRIBUTIONS + 1
+        self.TOTAL_ACTIONS = self.NUM_DISTRIBUTIONS + 2
+        
+        self.action_spaces = {agent: Discrete(self.TOTAL_ACTIONS) for agent in self.possible_agents}
+        
+        # 観測空間の次元計算: [生存フラグ(N), 権力ウェイト(N), 現在の提案者(N), 現在の分配案(N)] = 4 * N 次元
+        obs_dim = 4 * self.n_agents
         self.observation_spaces = {
             agent: Dict({
-                "observation": Box(low=0.0, high=float(max(10, total_gems)), shape=(20,), dtype=np.float32),
-                "action_mask": Box(low=0, high=1, shape=(TOTAL_ACTIONS,), dtype=np.int8)
+                "observation": Box(low=0.0, high=float(max(100, self.total_gems)), shape=(obs_dim,), dtype=np.float32),
+                "action_mask": Box(low=0, high=1, shape=(self.TOTAL_ACTIONS,), dtype=np.int8)
             }) for agent in self.possible_agents
         }
 
@@ -86,10 +94,10 @@ class PirateGemEnv(AECEnv):
         
         obs = np.array(alive_flag + weights + proposer_onehot + proposal, dtype=np.float32)
         
-        mask = np.zeros(TOTAL_ACTIONS, dtype=np.int8)
+        mask = np.zeros(self.TOTAL_ACTIONS, dtype=np.int8)
         if self.alive[agent]:
             if self.phase == "PROPOSE" and agent == self.proposer:
-                for i, dist in enumerate(DISTRIBUTIONS):
+                for i, dist in enumerate(self.DISTRIBUTIONS):
                     valid = True
                     for j, amount in enumerate(dist):
                         if amount > 0 and not self.alive[self.possible_agents[j]]:
@@ -98,8 +106,8 @@ class PirateGemEnv(AECEnv):
                     if valid:
                         mask[i] = 1
             elif self.phase == "VOTE" and agent == self.agent_selection:
-                mask[ACTION_YES] = 1
-                mask[ACTION_NO] = 1
+                mask[self.ACTION_YES] = 1
+                mask[self.ACTION_NO] = 1
                 
         return {"observation": obs, "action_mask": mask}
 
@@ -112,14 +120,14 @@ class PirateGemEnv(AECEnv):
         self._clear_rewards()
 
         if self.phase == "PROPOSE":
-            self.current_proposal = DISTRIBUTIONS[action]
+            self.current_proposal = self.DISTRIBUTIONS[action]
             self.phase = "VOTE"
             self.votes = {}
             self.voting_order = [a for a in self.possible_agents if self.alive[a]]
             self._next_voter()
             
         elif self.phase == "VOTE":
-            self.votes[agent] = (action == ACTION_YES)
+            self.votes[agent] = (action == self.ACTION_YES)
             self.voting_order.remove(agent)
             
             if len(self.voting_order) > 0:
@@ -166,13 +174,12 @@ class PirateGemEnv(AECEnv):
                 self.agent_selection = self.proposer
 
     def render(self):
-        # 現在の状況を出力する処理
         print("-" * 40)
         alive_str = ", ".join([a.split('_')[1] for a in self.possible_agents if self.alive[a]])
         print(f"生存者: [{alive_str}] | 現在のフェーズ: {self.phase}")
         if self.phase == "PROPOSE":
             print(f"👑 提案者 {self.proposer} が分配案を考えています...")
         elif self.phase == "VOTE":
-            print(f"💡 現在の分配案 (A, B, C, D, E): {self.current_proposal}")
+            print(f"💡 現在の分配案: {self.current_proposal}")
             if self.agent_selection in self.voting_order:
                 print(f"🗳️ {self.agent_selection} の投票待ち...")

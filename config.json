@@ -1,0 +1,7 @@
+{
+    "num_agents": 5,
+    "total_gems": 10,
+    "L": 3,
+    "agent_weights": [10.0, 8.0, 6.0, 4.0, 2.0],
+    "train_epochs": 50
+}
