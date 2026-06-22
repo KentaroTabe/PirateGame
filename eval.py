@@ -75,6 +75,14 @@ def watch():
         print("\n=========================================")
         print("ゲーム開始！")
         print("=========================================")
+        print(f"【環境設定】")
+        print(f" - 海賊の人数: {len(agents)}人")
+        print(f" - 宝石の総数: {raw_env.total_gems}個")
+        print(f" - 命の重さ(ペナルティ L): {raw_env.L}")
+        
+        weight_str = ", ".join([f"{a.split('_')[1]}:{w}" for a, w in zip(agents, raw_env.agent_weights)])
+        print(f" - 権力ウェイト(発言力): [{weight_str}]")
+        print("=========================================\n")
         
         raw_env.reset()
         raw_env.render()
