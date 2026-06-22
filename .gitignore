@@ -39,3 +39,7 @@ IDEs / Editors
 .vscode/
 .idea/
 *.swp
+
+Log
+
+log/

@@ -28,28 +28,24 @@ def get_args():
     return parser.parse_args()
 
 def get_env():
-    # 独自に作成したAEC環境をTianshou用にラップする
     return PettingZooEnv(PirateGemEnv())
 
 def train_agent(args=get_args()):
-    # 環境のベクトル化
     env = get_env()
     train_envs = DummyVectorEnv([lambda: get_env() for _ in range(1)])
     test_envs = DummyVectorEnv([lambda: get_env() for _ in range(1)])
     
-    # シードの固定
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     train_envs.seed(args.seed)
     test_envs.seed(args.seed)
     
-    # 各エージェントに対するDQNポリシーの構築
     policies = {}
-    agents = env.agents
+    agents = env.env.possible_agents
     
     for agent in agents:
-        obs_shape = env.observation_space[agent]["observation"].shape
-        act_shape = env.action_space[agent].n
+        obs_shape = env.env.observation_spaces[agent]["observation"].shape
+        act_shape = env.env.action_spaces[agent].n
         net = Net(obs_shape, act_shape, hidden_sizes=args.hidden_sizes, device=args.device)
         optim = torch.optim.Adam(net.parameters(), lr=args.lr)
         
@@ -63,13 +59,11 @@ def train_agent(args=get_args()):
         )
         policies[agent] = policy
         
-    # 全エージェントのポリシーを統括するマネージャー
     policy_manager = MultiAgentPolicyManager(
         policies=[policies[agent] for agent in agents],
         env=env
     )
     
-    # データコレクターの準備
     train_collector = Collector(
         policy_manager, train_envs,
         VectorReplayBuffer(args.buffer_size, len(train_envs)),
@@ -77,7 +71,6 @@ def train_agent(args=get_args()):
     )
     test_collector = Collector(policy_manager, test_envs, exploration_noise=True)
     
-    # イプシロン（探索率）のスケジューリング関数
     def train_fn(epoch, env_step):
         for a in agents:
             policies[a].set_eps(args.eps_train)
@@ -86,7 +79,6 @@ def train_agent(args=get_args()):
         for a in agents:
             policies[a].set_eps(args.eps_test)
 
-    # Trainerによる学習ループの実行
     print(f"Training started on {args.device}...")
     trainer = OffpolicyTrainer(
         policy=policy_manager,
@@ -105,6 +97,12 @@ def train_agent(args=get_args()):
     
     print("\nTraining finished!")
     print(result)
+    
+    # ---------------------------------------------------------
+    # 【追記部分】学習したモデルの保存
+    # ---------------------------------------------------------
+    torch.save(policy_manager.state_dict(), 'policy.pth')
+    print("モデルを 'policy.pth' に保存しました。")
 
 if __name__ == '__main__':
     train_agent()
