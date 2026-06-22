@@ -34,3 +34,76 @@
    ```bash
    python -m venv .venv
    .venv\Scripts\activate
+
+```
+
+**macOS / Linux の場合:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+
+```
+
+3. 以下のコマンドで必要なパッケージをインストールします。
+```bash
+pip install -r requirements.txt
+
+```
+
+
+
+---
+
+## 実行方法
+
+本プロジェクトでは、環境設定ファイル（`config.json`）を編集することで、海賊の人数や宝石の数、命の重さなどを自由に変更して実験を行うことができます。
+
+### 1. 環境設定 (`config.json`)
+
+実験を始める前に、プロジェクトルートにある `config.json` を編集します。
+
+```json
+{
+    "num_agents": 5,
+    "total_gems": 10,
+    "L": 1.5,
+    "agent_weights": [10.0, 8.0, 6.0, 4.0, 2.0],
+    "train_epochs": 50
+}
+
+```
+
+### 2. 実験の実行
+
+設定が完了したら、以下のコマンドで学習から評価ゲームの実行、結果の保存までを一括で行います。
+
+```bash
+python run_experiment.py
+
+```
+
+### 3. 出力ファイルの確認
+
+実験を実行すると、自動的に以下のフォルダとファイルが生成・保存されます。（実行のたびに連番 `n` が付与されます）
+
+* **`result/result_n.txt`**: 環境設定、学習スコア、最終的な報酬結果などをまとめたサマリーレポート。
+* **`models/policy_n.pth`**: 学習済みネットワークの重み（モデルファイル）。
+* **`log/log_learning_n.txt`**: Tianshouによるエポックごとの学習ログ。
+* **`log/log_eval_n.txt`**: 学習後のエージェントによる1試合の詳しい会話・行動（駆け引き）のログ。
+
+---
+
+## ファイル構成
+
+* **`env.py`**: PettingZoo AECEnvを継承したゲーム環境のロジック。
+* **`network.py`**: PyTorchを用いたDQNのネットワークアーキテクチャ。
+* **`run_experiment.py`**: 設定読み込み、学習、評価、ログ出力を統合した実行スクリプト。
+* **`config.json`**: 環境パラメータを設定するファイル。
+* **`train.py` / `eval.py**`: 個別機能のテスト用スクリプト（旧バージョン）。
+* **`requirements.txt`**: 必要なPythonパッケージのリスト。
+* **`.gitignore`**: Gitのバージョン管理から除外するファイルのリスト。
+
+```
+
+```
