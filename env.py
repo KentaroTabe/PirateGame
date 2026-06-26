@@ -84,9 +84,16 @@ class PirateGemEnv(AECEnv):
         alive_agents = [a for a in self.possible_agents if self.alive[a]]
         if len(alive_agents) == 0:
             return None
-        weights = [self.agent_weights[self.agent_name_mapping[a]] for a in alive_agents]
-        prob = np.array(weights) / sum(weights)
-        return np.random.choice(alive_agents, p=prob)
+        
+        if self.fixed_order:
+            # 生存しているエージェントの中で、最もインデックスが若い（最初の）エージェントを選択
+            # （例：Aが生存していれば必ずA、Aが否決されて死亡していればB、となる）
+            return alive_agents[0]
+        else:
+            # 従来通りのウェイトに基づく確率的なランダム選出
+            weights = [self.agent_weights[self.agent_name_mapping[a]] for a in alive_agents]
+            prob = np.array(weights) / sum(weights)
+            return np.random.choice(alive_agents, p=prob)
 
     def observe(self, agent):
         alive_flag = [1.0 if self.alive[a] else 0.0 for a in self.possible_agents]
