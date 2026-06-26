@@ -26,6 +26,8 @@ class PirateGemEnv(AECEnv):
         self.L = config.get("L", 1.5)
         self.total_gems = config.get("total_gems", 10)
         self.n_agents = config.get("num_agents", 5)
+
+        self.fixed_order = config.get("fixed_order", False)
         
         # エージェント名と権力ウェイトの設定
         self.possible_agents = [f"agent_{chr(65+i)}" for i in range(self.n_agents)]

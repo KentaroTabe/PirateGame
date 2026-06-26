@@ -55,6 +55,23 @@ def run_experiment():
     # train.pyの引数オブジェクトをベースに作成
     args = get_args()
     args.device = 'cpu' # 必要に応じて変更してください
+
+    epochs = config.get("train_epochs", 50)
+    args.epoch = epochs
+    
+    # 1. バッファサイズの自動調整 (比例)
+    # 50エポックなら20000、200エポックなら80000 (上限100000, 下限10000)
+    calc_buffer = int(20000 * (epochs / 50.0))
+    args.buffer_size = max(10000, min(100000, calc_buffer))
+    
+    # 2. 学習率(lr)の自動調整 (反比例)
+    # 50エポックなら0.001、200エポックなら0.00025 (上限0.001, 下限0.0001)
+    calc_lr = 1e-3 * (50.0 / epochs)
+    args.lr = max(1e-4, min(1e-3, calc_lr))
+    
+    print(f"💡 【自動調整】エポック数: {epochs}")
+    print(f"    - バッファサイズ: {args.buffer_size}")
+    print(f"    - 学習率 (lr): {args.lr:.5f}")
     
     # train_agentを呼び出して学習を実行
     train_result, policy_manager = train_agent(
