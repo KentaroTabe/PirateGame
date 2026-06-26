@@ -97,7 +97,7 @@ python run_experiment.py
 * **`network.py`**: PyTorchを用いたDQNのネットワークアーキテクチャ。
 * **`run_experiment.py`**: 設定読み込み、学習、評価、ログ出力を統合した実行スクリプト。
 * **`config.json`**: 環境パラメータを設定するファイル。
-* **`train.py` / `eval.py**`: 個別機能のテスト用スクリプト（旧バージョン）。
+* **`train.py` / `eval.py**`: 個別機能のテスト用スクリプト。
 * **`requirements.txt`**: 必要なPythonパッケージのリスト。
 * **`.gitignore`**: Gitのバージョン管理から除外するファイルのリスト。
 
