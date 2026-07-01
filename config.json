@@ -2,7 +2,7 @@
     "num_agents": 5,
     "total_gems": 10,
     "L": 100,
-    "agent_weights": [20.0, 10.0, 5.0, 2.0],
+    "agent_weights": [20.0, 10.0, 5.0, 2.0, 1.0],
     "train_epochs": 5000,
     "fixed_order": true
 }

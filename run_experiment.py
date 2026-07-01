@@ -7,18 +7,21 @@ from train import train_agent, get_args
 from eval import run_game
 
 class DualLogger(object):
-    """標準出力をターミナルと指定したファイルの両方に書き出すロガー"""
-    def __init__(self, filepath):
+    """標準出力を指定したファイルに書き出すロガー。quiet=Trueでターミナル出力を抑制し高速化する"""
+    def __init__(self, filepath, quiet=False):
         self.terminal = sys.stdout
         self.filepath = filepath
         self.file = open(self.filepath, "w", encoding="utf-8")
+        self.quiet = quiet
 
     def write(self, message):
-        self.terminal.write(message)
+        if not self.quiet:
+            self.terminal.write(message)
         self.file.write(message)
 
     def flush(self):
-        self.terminal.flush()
+        if not self.quiet:
+            self.terminal.flush()
         self.file.flush()
         
     def close(self):
@@ -48,7 +51,7 @@ def run_experiment():
     # ==========================================
     # フェーズ1: 学習 (Training) -> train.py の関数を利用
     # ==========================================
-    logger = DualLogger(log_learning_path)
+    logger = DualLogger(log_learning_path, quiet=True)
     sys.stdout = logger
     print(f"--- 学習開始 (ログ: {log_learning_path}) ---")
     
