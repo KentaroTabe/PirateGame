@@ -20,16 +20,14 @@ class Logger(object):
         self.log_file = open(self.log_filepath, "w", encoding="utf-8")
 
     def write(self, message):
-        self.terminal.write(message)
         self.log_file.write(message)
 
     def flush(self):
-        self.terminal.flush()
         self.log_file.flush()
         
     def close(self):
         self.log_file.close()
-        print(f"\n[INFO] ログを {self.log_filepath} に保存しました。")
+        self.terminal.write(f"\n[INFO] ログを {self.log_filepath} に保存しました。\n")
 
 # 実験用スクリプト等から設定やポリシーを使い回せるように関数化
 def run_game(policy_manager=None, config=None, model_path='policy.pth', sleep_time=0.0):
@@ -115,7 +113,7 @@ def watch():
     logger = Logger()
     sys.stdout = logger
     try:
-        run_game(sleep_time=1.0)
+        run_game(sleep_time=0.0)
     finally:
         sys.stdout = logger.terminal
         logger.close()

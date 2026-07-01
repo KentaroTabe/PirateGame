@@ -158,9 +158,23 @@ class PirateGemEnv(AECEnv):
         
         if yes_count >= len(alive_agents) / 2:
             print(f"👉 提案は【可決】されました！")
+            
+            # 可決に必要な最小限の過半数ラインを計算
+            required_votes = int(np.ceil(len(alive_agents) / 2))
+            
             for i, a in enumerate(self.possible_agents):
                 if self.alive[a]:
-                    self.rewards[a] = float(self.current_proposal[i])
+                    reward = float(self.current_proposal[i])
+                    
+                    # ===== 【追加】過剰得票による提案者へのペナルティ =====
+                    if a == self.proposer:
+                        excess_votes = yes_count - required_votes
+                        if excess_votes > 0:
+                            # 余分な賛成票1つにつき -1.0 のペナルティ
+                            reward -= (1.0 * excess_votes) 
+                    # ======================================================
+                    
+                    self.rewards[a] = reward
             for a in self.agents:
                 self.terminations[a] = True
         else:
