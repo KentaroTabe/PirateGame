@@ -29,12 +29,11 @@ class Logger(object):
         self.log_file.close()
         self.terminal.write(f"\n[INFO] ログを {self.log_filepath} に保存しました。\n")
 
-# 実験用スクリプト等から設定やポリシーを使い回せるように関数化
-def run_game(policy_manager=None, config=None, model_path='policy.pth', sleep_time=0.0):
+# verbose引数を追加して出力を制御できるように変更
+def run_game(policy_manager=None, config=None, model_path='policy.pth', sleep_time=0.0, verbose=True):
     raw_env = PirateGemEnv(config if config is not None else {})
     agents = raw_env.possible_agents
     
-    # ポリシーマネージャーが渡されなかった場合は、新しく作ってモデルファイルをロードする
     if policy_manager is None:
         env = PettingZooEnv(raw_env)
         policies = {}
@@ -49,63 +48,64 @@ def run_game(policy_manager=None, config=None, model_path='policy.pth', sleep_ti
         
         try:
             policy_manager.load_state_dict(torch.load(model_path, map_location='cpu'))
-            print(f"モデル '{model_path}' を正常に読み込みました。")
+            if verbose: print(f"モデル '{model_path}' を正常に読み込みました。")
         except FileNotFoundError:
             print(f"エラー: '{model_path}' が見つかりません。")
             return None
 
-    # 評価モードへ切り替え
     policy_manager.eval()
     for policy in policy_manager.policies.values():
         policy.set_eps(0.0)
 
-    print("\n=========================================")
-    print("ゲーム開始！")
-    print("=========================================")
-    print(f"【環境設定】")
-    print(f" - 海賊の人数: {len(agents)}人")
-    print(f" - 宝石の総数: {raw_env.total_gems}個")
-    print(f" - 命の重さ(ペナルティ L): {raw_env.L}")
-    
-    weight_str = ", ".join([f"{a.split('_')[1]}:{w}" for a, w in zip(agents, raw_env.agent_weights)])
-    print(f" - 権力ウェイト(発言力): [{weight_str}]")
-    print("=========================================\n")
-    
+    if verbose:
+        print("\n=========================================")
+        print("ゲーム開始！")
+        print("=========================================")
+        print(f"【環境設定】")
+        print(f" - 海賊の人数: {len(agents)}人")
+        print(f" - 宝石の総数: {raw_env.total_gems}個")
+        print(f" - 命の重さ(ペナルティ L): {raw_env.L}")
+        weight_str = ", ".join([f"{a.split('_')[1]}:{w}" for a, w in zip(agents, raw_env.agent_weights)])
+        print(f" - 権力ウェイト(発言力): [{weight_str}]")
+        print("=========================================\n")
+        
     raw_env.reset()
-    raw_env.render()
     
     final_rewards = {a: 0.0 for a in agents}
     
-    for agent in raw_env.agent_iter():
-        obs, reward, termination, truncation, info = raw_env.last()
-        
-        if termination or truncation:
-            final_rewards[agent] = reward
-            raw_env.step(None)
-            continue
+    # 推論モードを適用して評価を高速化
+    with torch.inference_mode():
+        for agent in raw_env.agent_iter():
+            obs, reward, termination, truncation, info = raw_env.last()
             
-        if sleep_time > 0:
-            time.sleep(sleep_time)
+            if termination or truncation:
+                final_rewards[agent] = reward
+                raw_env.step(None)
+                continue
+                
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+                
+            batch = Batch(obs=Batch([obs]), info=Batch([info]))
             
-        batch = Batch(obs=Batch([obs]), info=Batch([info]))
-        
-        # policy_managerから直接行動をサンプリング（インデックスにマッピングされたポリシーを呼ぶ）
-        action_result = policy_manager.policies[agent](batch)
-        action = action_result.act[0]
-        
-        if raw_env.phase == "PROPOSE":
-            print(f"💬 => {agent} は提案行動 [ {raw_env.DISTRIBUTIONS[action]} ] を選択しました！")
-        else:
-            vote_str = "👍 賛成 (YES)" if action == raw_env.ACTION_YES else "👎 反対 (NO)"
-            print(f"💬 => {agent} は {vote_str} を選択しました！")
+            action_result = policy_manager.policies[agent](batch)
+            action = action_result.act[0]
             
-        raw_env.step(action)
-        raw_env.render()
+            if verbose:
+                if raw_env.phase == "PROPOSE":
+                    print(f"💬 => {agent} は提案行動 [ {raw_env.DISTRIBUTIONS[action]} ] を選択しました！")
+                else:
+                    vote_str = "👍 賛成 (YES)" if action == raw_env.ACTION_YES else "👎 反対 (NO)"
+                    print(f"💬 => {agent} は {vote_str} を選択しました！")
+                
+            raw_env.step(action)
+            if verbose: raw_env.render()
         
-    print("\n=========================================")
-    print("ゲーム終了！最終的な報酬（宝石の数 / ペナルティ）:")
-    for a, r in final_rewards.items():
-        print(f" - {a}: {r}")
+    if verbose:
+        print("\n=========================================")
+        print("ゲーム終了！最終的な報酬（宝石の数 / ペナルティ）:")
+        for a, r in final_rewards.items():
+            print(f" - {a}: {r}")
         
     return final_rewards
 
@@ -113,7 +113,7 @@ def watch():
     logger = Logger()
     sys.stdout = logger
     try:
-        run_game(sleep_time=0.0)
+        run_game(sleep_time=0.0, verbose=True)
     finally:
         sys.stdout = logger.terminal
         logger.close()

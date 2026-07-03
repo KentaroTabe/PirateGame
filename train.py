@@ -2,10 +2,10 @@ import argparse
 import numpy as np
 import torch
 from tianshou.data import Collector, VectorReplayBuffer
-from tianshou.env import DummyVectorEnv, PettingZooEnv
+from tianshou.env import SubprocVectorEnv, PettingZooEnv  # DummyVectorEnv から SubprocVectorEnv に変更
 from tianshou.policy import DQNPolicy, MultiAgentPolicyManager
 from tianshou.trainer import OffpolicyTrainer
-from env import PirateGemEnv
+from env import PirateGemEnv, make_pirate_env  # make_pirate_env をインポート
 from network import Net
 
 def get_args():
@@ -25,24 +25,24 @@ def get_args():
     parser.add_argument('--batch-size', type=int, default=64, help='バッチサイズ')
     parser.add_argument('--hidden-sizes', type=int, nargs='*', default=[128, 128], help='隠れ層のサイズ')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help='デバイス')
+    parser.add_argument('--num-envs', type=int, default=4, help='並列学習する環境の数（プロセス数）') # 追加
     return parser.parse_args()
 
-# configを外部から渡せるように修正
 def get_env(config=None):
     return PettingZooEnv(PirateGemEnv(config if config is not None else {}))
 
-# 外部引数に対応できるように修正
-def train_agent(args=None, config=None, model_path='policy.pth', show_progress=True):
+def train_agent(args=None, config=None, model_path='policy.pth', show_progress=True, verbose=True):
     if args is None:
         args = get_args()
         
-    # configにエポック数がある場合は上書き
     if config is not None and "train_epochs" in config:
         args.epoch = config["train_epochs"]
 
     env = get_env(config)
-    train_envs = DummyVectorEnv([lambda: get_env(config) for _ in range(1)])
-    test_envs = DummyVectorEnv([lambda: get_env(config) for _ in range(1)])
+    
+    # SubprocVectorEnv を使用して学習環境を並列化
+    train_envs = SubprocVectorEnv([lambda: PettingZooEnv(make_pirate_env(config)) for _ in range(args.num_envs)])
+    test_envs = SubprocVectorEnv([lambda: PettingZooEnv(make_pirate_env(config)) for _ in range(args.num_envs)])
     
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -76,12 +76,12 @@ def train_agent(args=None, config=None, model_path='policy.pth', show_progress=T
     def test_fn(epoch, env_step):
         for a in agents: policies[a].set_eps(args.eps_test)
 
-    print(f"Training started on {args.device}...")
+    print(f"Training started on {args.device} with {args.num_envs} parallel envs...")
     trainer = OffpolicyTrainer(
         policy=policy_manager, train_collector=train_collector, test_collector=test_collector,
         max_epoch=args.epoch, step_per_epoch=args.step_per_epoch, step_per_collect=args.step_per_collect,
         episode_per_test=10, batch_size=args.batch_size, train_fn=train_fn, test_fn=test_fn,
-        update_per_step=args.update_per_step, show_progress=show_progress
+        update_per_step=args.update_per_step, show_progress=show_progress, verbose=verbose
     )
     result = trainer.run()
     

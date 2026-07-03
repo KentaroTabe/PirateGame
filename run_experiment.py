@@ -2,12 +2,10 @@ import json
 import os
 import sys
 
-# 他ファイルから関数やクラスをインポート
 from train import train_agent, get_args
 from eval import run_game
 
 class DualLogger(object):
-    """標準出力を指定したファイルに書き出すロガー。quiet=Trueでターミナル出力を抑制し高速化する"""
     def __init__(self, filepath, quiet=False):
         self.terminal = sys.stdout
         self.filepath = filepath
@@ -38,7 +36,6 @@ def setup_directories():
     return n
 
 def run_experiment():
-    # 1. 設定の読み込み
     with open("config.json", "r", encoding="utf-8") as f:
         config = json.load(f)
         
@@ -49,57 +46,59 @@ def run_experiment():
     result_path = f"result/result_{n}.txt"
 
     # ==========================================
-    # フェーズ1: 学習 (Training) -> train.py の関数を利用
+    # フェーズ1: 学習 (Training) -> 並列化を適用
     # ==========================================
     logger = DualLogger(log_learning_path, quiet=True)
     sys.stdout = logger
     print(f"--- 学習開始 (ログ: {log_learning_path}) ---")
     
-    # train.pyの引数オブジェクトをベースに作成
     args = get_args()
-    args.device = 'cpu' # 必要に応じて変更してください
+    args.device = 'cpu'  # 必要に応じて 'cuda' などに変更してください
+    args.num_envs = 4    # 同時並列処理する環境（プロセス）数。CPUコア数に合わせて調整してください
 
     epochs = config.get("train_epochs", 50)
     args.epoch = epochs
     
-    # 1. バッファサイズの自動調整 (比例)
-    # 50エポックなら20000、200エポックなら80000 (上限100000, 下限10000)
     calc_buffer = int(20000 * (epochs / 50.0))
     args.buffer_size = max(10000, min(100000, calc_buffer))
     
-    # 2. 学習率(lr)の自動調整 (反比例)
-    # 50エポックなら0.001、200エポックなら0.00025 (上限0.001, 下限0.0001)
     calc_lr = 1e-3 * (50.0 / epochs)
     args.lr = max(1e-4, min(1e-3, calc_lr))
     
     print(f"💡 【自動調整】エポック数: {epochs}")
     print(f"    - バッファサイズ: {args.buffer_size}")
     print(f"    - 学習率 (lr): {args.lr:.5f}")
+    print(f"    - 並列プロセス数: {args.num_envs}")
     
-    # train_agentを呼び出して学習を実行
     train_result, policy_manager = train_agent(
         args=args, 
         config=config, 
         model_path=model_path, 
-        show_progress=False
+        show_progress=False,
+        verbose=False
     )
     
     sys.stdout = logger.terminal
     logger.close()
 
+# ==========================================
+    # フェーズ2: 評価・観察 (Evaluation)
     # ==========================================
-    # フェーズ2: 評価・観察 (Evaluation) -> eval.py の関数を利用
-    # ==========================================
-    logger = DualLogger(log_eval_path)
+    # ★ 修正1: quiet=True にしてターミナルへの出力をミュートする
+    logger = DualLogger(log_eval_path, quiet=True) 
     sys.stdout = logger
-    print(f"--- 評価ゲーム開始 (ログ: {log_eval_path}) ---")
     
-    # eval.pyから切り出したゲーム実行関数を呼び出す
+    # ※開始メッセージだけは画面に出したいので、logger.terminal に直接書く
+    logger.terminal.write(f"--- 評価ゲーム開始 (ログ: {log_eval_path}) ---\n")
+    print(f"--- 評価ゲーム開始 (ログ: {log_eval_path}) ---") # これはファイル用
+    
+    # ★ 修正2: verbose=True に戻して、ファイル用の詳細ログ（提案内容など）を生成させる
     final_rewards = run_game(
         policy_manager=policy_manager, 
         config=config, 
         model_path=model_path,
-        sleep_time=0.0
+        sleep_time=0.0,
+        verbose=True 
     )
 
     sys.stdout = logger.terminal

@@ -206,3 +206,7 @@ class PirateGemEnv(AECEnv):
             print(f"💡 現在の分配案: {self.current_proposal}")
             if self.agent_selection in self.voting_order:
                 print(f"🗳️ {self.agent_selection} の投票待ち...")
+
+def make_pirate_env(config=None):
+    """マルチプロセス並列化（Pickle）に対応するための環境生成関数"""
+    return PirateGemEnv(config if config is not None else {})
