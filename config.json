@@ -1,8 +1,8 @@
 {
-    "num_agents": 4,
+    "num_agents": 6,
     "total_gems": 5,
     "L": 100,
-    "agent_weights": [10.0, 15.0, 2.0, 1.0],
-    "train_epochs": 3000,
-    "fixed_order": false
+    "agent_weights": [10.0, 15.0, 2.0, 1.0, 1.0, 1.0],
+    "train_epochs": 50000,
+    "fixed_order": true
 }
