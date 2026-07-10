@@ -73,7 +73,7 @@ df["MA_Survival"] = df["First_Survival"].rolling(window=WINDOW_SIZE).mean()
 df["MA_Approval"] = df["Approval_Rate"].rolling(window=WINDOW_SIZE).mean()
 
 # 外れ値を含む初期エピソードを切り捨てる
-SKIP_EPISODES = 50000  
+SKIP_EPISODES = 0  
 if len(df) > SKIP_EPISODES:
     df = df.iloc[SKIP_EPISODES:].copy()
 
@@ -93,7 +93,7 @@ axes[0].grid(True, linestyle="--", alpha=0.6)
 axes[1].plot(df.index, df["MA_Survival"], color="blue", linewidth=2)
 axes[1].set_title(f"First Proposer Survival Rate ({WINDOW_SIZE}-ep window)", fontsize=12)
 axes[1].set_ylabel("Survival Rate", fontsize=10)
-axes[1].set_ylim(0.3, 0.5)  # 手動でレンジを固定
+axes[1].set_ylim(auto = True)  # 手動でレンジを固定
 axes[1].grid(True, linestyle="--", alpha=0.6)
 
 # (3) 可決時の賛成割合の移動平均
@@ -102,14 +102,14 @@ axes[2].axhline(y=0.5, color="black", linestyle="--", linewidth=1.5, label="Thre
 axes[2].set_title(f"Approval Rate at Acceptance ({WINDOW_SIZE}-ep window)", fontsize=12)
 axes[2].set_ylabel("Approval Rate", fontsize=10)
 axes[2].set_xlabel("Episode", fontsize=12)
-axes[2].set_ylim(0.45, 0.65)  # 手動でレンジを固定
+axes[2].set_ylim(auto = True)  # 手動でレンジを固定
 axes[2].legend(loc="upper right")
 axes[2].grid(True, linestyle="--", alpha=0.6)
 
 fig.suptitle(f"Training Progress: {base_name}", fontsize=16, y=0.98)
 plt.tight_layout()
 
-output_filename = f"log_deadnumber/log_chart_metrics_{base_name}.png"
+output_filename = f"log_deadnumber/log_chart_metrics_full_{base_name}.png"
 plt.savefig(output_filename)
 plt.close() 
 
