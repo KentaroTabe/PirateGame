@@ -41,8 +41,3 @@ IDEs / Editors
 *.swp
 
 Log
-
-log/
-models/
-result/
-log_deadnumber/
