@@ -2,8 +2,15 @@
     "num_agents": 6,
     "total_gems": 5,
     "L": 100,
-    "agent_weights": [10.0, 15.0, 2.0, 1.0, 1.0, 1.0],
-    "train_epochs": 50000,
+    "agent_weights": [
+        10.0,
+        15.0,
+        2.0,
+        1.0,
+        1.0,
+        1.0
+    ],
+    "train_epochs": 200,
     "fixed_order": false,
     "excess_vote_penalty": 0.0,
     "pretrain": true,
