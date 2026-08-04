@@ -107,10 +107,17 @@ def run_experiment():
     calc_lr = 1e-3 * (50.0 / epochs)
     args.lr = max(1e-4, min(1e-3, calc_lr))
 
+    # AECでは提案から否決確定(-L)までバッファ上で最大「生存者数」ステップ離れるため、
+    # n-stepリターンの窓をエピソード最大長(全ラウンドの提案+投票ステップ数)以上にし、
+    # 終端報酬が全エージェントの全遷移に届くようにする(実質モンテカルロリターン)
+    n = config.get("num_agents", 5)
+    args.n_step = n * (n + 1) // 2 + n - 2
+
     print(f"💡 【自動調整】エポック数: {epochs}")
     print(f"    - バッファサイズ: {args.buffer_size}")
     print(f"    - 学習率 (lr): {args.lr:.5f}")
     print(f"    - 並列プロセス数: {args.num_envs}")
+    print(f"    - n-stepリターンの窓: {args.n_step}(エピソード最大長)")
     print(f"    - 提案者の選出: {'固定順' if config.get('fixed_order') else 'agent_weights に基づくランダム順'}")
     print(f"    - 事前学習の適用: {'あり（固定順一般解）' if pretrained_state_dicts else 'なし'}")
 
