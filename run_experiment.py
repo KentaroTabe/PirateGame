@@ -16,6 +16,7 @@ import sys
 import torch
 
 from eval import evaluate
+from plot_log import plot_metrics
 from pretrain import pretrain_agents
 from train import get_args, train_agent
 
@@ -159,7 +160,17 @@ def run_experiment():
     logger.close()
 
     # ==========================================
-    # フェーズ3: サマリーの出力 (Result)
+    # フェーズ3: 学習曲線のグラフ化 (Plot)
+    # ==========================================
+    plot_path = None
+    try:
+        plot_path = plot_metrics(log_metrics_path)
+        print(f"学習曲線のグラフを {plot_path} に保存しました。")
+    except Exception as e:  # グラフ化の失敗で実験結果を失わないようにする
+        print(f"警告: 学習曲線のグラフ化に失敗しました: {e}")
+
+    # ==========================================
+    # フェーズ4: サマリーの出力 (Result)
     # ==========================================
     with open(result_path, "w", encoding="utf-8") as f:
         f.write("=========================================\n")
@@ -182,6 +193,9 @@ def run_experiment():
         f.write(f" - 実行エポック数: {config['train_epochs']}\n")
         f.write(f" - 最終テスト報酬(Best): {train_result.get('best_reward', 0):.2f}\n")
         f.write(f" - モデル保存先: {model_path}\n")
+        f.write(f" - 学習中メトリクス: {log_metrics_path}\n")
+        if plot_path:
+            f.write(f" - 学習曲線グラフ: {plot_path}\n")
         f.write("-----------------------------------------\n")
         f.write(f"【評価統計（{eval_stats['n_episodes']} エピソード）】\n")
         f.write(f" - 平均提案回数: {eval_stats['avg_proposals']:.2f}\n")

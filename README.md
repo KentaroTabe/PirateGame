@@ -150,6 +150,9 @@ scripts/run_experiment.sh
 - **`log/log_learning_n.txt`**: エポックごとの学習ログ
 - **`log/log_metrics_n.csv`**: 学習中に定期記録した政治的指標
   （エージェント別平均報酬・死亡率・一発可決率・平均エピソード長）
+- **`files/plots/log_metrics_n.png`**: 上記メトリクスの学習曲線グラフ
+  （実験終了時に自動生成。全体/宝石レンジ拡大の報酬推移・死亡率・
+  一発可決率・エピソード長・最終盤の平均取り分）
 - **`log/log_eval_n.txt`**: 評価エピソードの駆け引きログと統計
 
 ### 4. テスト・動作確認
@@ -159,15 +162,15 @@ scripts/run_tests.sh    # ユニットテスト（ソルバー・環境・事前
 scripts/smoke_test.sh   # パイプライン全体の短時間動作確認
 ```
 
-### 5. (オプション) 学習曲線のグラフ化 / ONNX エクスポート
+### 5. (オプション) 学習曲線の再グラフ化 / ONNX エクスポート
+
+学習曲線グラフは実験終了時に自動生成されます。過去のCSVをまとめて再生成する場合:
 
 ```bash
 scripts/plot_logs.sh   # log/log_metrics_*.csv を files/plots/ に一括グラフ化
 python export_onnx.py
 ```
 
-`plot_log.py` は学習中の政治的指標（エージェント別平均報酬・死亡率・
-一発可決率・平均エピソード長）を1枚のPNGにまとめます。
 個別に実行する場合は `python plot_log.py log/log_metrics_1.csv` のようにします。
 
 ---
