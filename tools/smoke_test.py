@@ -10,6 +10,7 @@ import sys
 import torch
 
 from eval import evaluate
+from plot_log import plot_metrics
 from pretrain import pretrain_agents
 from train import get_args, train_agent
 
@@ -35,16 +36,22 @@ def main(out_dir):
     args = get_args()
     args.device = "cpu"
     args.num_envs = 2
-    args.epoch = 2
+    args.epoch = 4
     args.step_per_epoch = 500
     args.buffer_size = 5000
 
     model_path = os.path.join(out_dir, "policy_smoke.pth")
+    metrics_path = os.path.join(out_dir, "log_metrics_smoke.csv")
     train_result, policy_manager = train_agent(
         args=args, config=config, model_path=model_path,
-        pretrained_state_dicts=state_dicts, show_progress=False, verbose=False,
+        pretrained_state_dicts=state_dicts,
+        metrics_path=metrics_path, metrics_interval=1, metrics_episodes=10,
+        show_progress=False, verbose=False,
     )
     print(f"best_reward: {train_result.get('best_reward', 0):.2f}")
+
+    plot_path = plot_metrics(metrics_path, os.path.join(out_dir, "plots"))
+    print(f"メトリクスのグラフを {plot_path} に保存しました。")
 
     print("\n=== フェーズ2: 統計評価 ===")
     eval_stats = evaluate(

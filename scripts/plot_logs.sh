@@ -10,10 +10,10 @@ if [ -f .venv/bin/activate ]; then
 fi
 
 shopt -s nullglob
-FILES=(log/log_learning_*.txt)
+FILES=(log/log_metrics_*.csv)
 
 if [ ${#FILES[@]} -eq 0 ]; then
-  echo "log/log_learning_*.txt が見つかりません。"
+  echo "log/log_metrics_*.csv が見つかりません。"
   exit 0
 fi
 

@@ -148,6 +148,8 @@ scripts/run_experiment.sh
 - **`models/policy_n.pth`**: DQN 学習後のネットワーク（統合モデルファイル）
 - **`log/log_pretrain_n.txt`**: 事前学習のログ（一般解一致率など）
 - **`log/log_learning_n.txt`**: エポックごとの学習ログ
+- **`log/log_metrics_n.csv`**: 学習中に定期記録した政治的指標
+  （エージェント別平均報酬・死亡率・一発可決率・平均エピソード長）
 - **`log/log_eval_n.txt`**: 評価エピソードの駆け引きログと統計
 
 ### 4. テスト・動作確認
@@ -157,12 +159,16 @@ scripts/run_tests.sh    # ユニットテスト（ソルバー・環境・事前
 scripts/smoke_test.sh   # パイプライン全体の短時間動作確認
 ```
 
-### 5. (オプション) 学習ログのグラフ化 / ONNX エクスポート
+### 5. (オプション) 学習曲線のグラフ化 / ONNX エクスポート
 
 ```bash
-scripts/plot_logs.sh
+scripts/plot_logs.sh   # log/log_metrics_*.csv を files/plots/ に一括グラフ化
 python export_onnx.py
 ```
+
+`plot_log.py` は学習中の政治的指標（エージェント別平均報酬・死亡率・
+一発可決率・平均エピソード長）を1枚のPNGにまとめます。
+個別に実行する場合は `python plot_log.py log/log_metrics_1.csv` のようにします。
 
 ---
 

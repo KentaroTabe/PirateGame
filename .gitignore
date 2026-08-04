@@ -1,33 +1,31 @@
-Environments
-
+# Environments
 .env
-.venv
+.venv/
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
 
-Python
-
-pycache/
+# Python
 __pycache__/
-smoke_output/
 *.py[cod]
 *$py.class
 *.so
 
-PyTorch
-
+# 生成物（実験ログ・学習済みモデル・グラフ・過去のアーカイブ）
+log/
+files/
+models/
+smoke_output/
 *.pt
 *.pth
+*.onnx
 
-Jupyter Notebook
+# Jupyter Notebook
+.ipynb_checkpoints/
 
-*.ipynb_checkpoints
-
-OS generated files
-
+# OS generated files
 .DS_Store
 .DS_Store?
 ._*
@@ -36,10 +34,7 @@ OS generated files
 ehthumbs.db
 Thumbs.db
 
-IDEs / Editors
-
+# IDEs / Editors
 .vscode/
 .idea/
 *.swp
-
-Log

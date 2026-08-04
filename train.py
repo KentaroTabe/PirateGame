@@ -69,8 +69,35 @@ def build_policy_manager(env, args, pretrained_state_dicts=None):
     return manager, policies
 
 
+def collect_political_metrics(policy_manager, policies, test_collector, agents, n_episode):
+    """貪欲方策（ε=0）で評価対局を行い、政治的指標を集計する。
+
+    Returns:
+        dict: rew_mean / death_rate はエージェント順の配列、
+        len_mean は平均エピソード長、first_pass_rate は最初の提案が可決された割合。
+    """
+    policy_manager.eval()
+    for a in agents:
+        policies[a].set_eps(0.0)
+    test_collector.reset_env()
+    test_collector.reset_buffer()
+    result = test_collector.collect(n_episode=n_episode)
+
+    rews = np.asarray(result["rews"])  # (エピソード数, エージェント数)
+    lens = np.asarray(result["lens"])
+    return {
+        "rew_mean": rews.mean(axis=0),
+        "death_rate": (rews < 0).mean(axis=0),  # 負の報酬 = 否決されて死亡
+        "len_mean": float(lens.mean()),
+        # 最初の提案で決着 = 1提案 + 全員投票 = (エージェント数 + 1) ステップ
+        "first_pass_rate": float((lens == len(agents) + 1).mean()),
+    }
+
+
 def train_agent(args=None, config=None, model_path='policy.pth',
-                pretrained_state_dicts=None, show_progress=True, verbose=True):
+                pretrained_state_dicts=None, metrics_path=None,
+                metrics_interval=10, metrics_episodes=30,
+                show_progress=True, verbose=True):
     if args is None:
         args = get_args()
 
@@ -112,7 +139,32 @@ def train_agent(args=None, config=None, model_path='policy.pth',
         episode_per_test=10, batch_size=args.batch_size, train_fn=train_fn, test_fn=test_fn,
         update_per_step=args.update_per_step, show_progress=show_progress, verbose=verbose,
     )
-    result = trainer.run()
+    if metrics_path is None:
+        result = trainer.run()
+    else:
+        # エポック単位でイテレートし、一定間隔で政治的指標をCSVに記録する
+        result = {}
+        names = [a.split('_')[1] for a in agents]
+        with open(metrics_path, "w", encoding="utf-8") as mf:
+            header = (
+                ["epoch", "env_step", "len_mean", "first_pass_rate"]
+                + [f"rew_{x}" for x in names] + [f"death_{x}" for x in names]
+            )
+            mf.write(",".join(header) + "\n")
+            for epoch, epoch_stat, info in trainer:
+                result = info
+                if epoch % metrics_interval == 0 or epoch == args.epoch:
+                    m = collect_political_metrics(
+                        policy_manager, policies, test_collector, agents, metrics_episodes,
+                    )
+                    row = (
+                        [epoch, epoch_stat["env_step"], m["len_mean"], m["first_pass_rate"]]
+                        + list(m["rew_mean"]) + list(m["death_rate"])
+                    )
+                    mf.write(",".join(
+                        f"{v:.4f}" if isinstance(v, float) else str(v) for v in row
+                    ) + "\n")
+                    mf.flush()
 
     train_envs.close()
     test_envs.close()

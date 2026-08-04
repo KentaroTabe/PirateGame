@@ -60,6 +60,7 @@ def run_experiment():
     n = setup_directories()
     log_pretrain_path = f"log/log_pretrain_{n}.txt"
     log_learning_path = f"log/log_learning_{n}.txt"
+    log_metrics_path = f"log/log_metrics_{n}.csv"
     log_eval_path = f"log/log_eval_{n}.txt"
     pretrained_path = f"models/pretrained_{n}.pth"
     model_path = f"models/policy_{n}.pth"
@@ -128,6 +129,10 @@ def run_experiment():
         config=config,
         model_path=model_path,
         pretrained_state_dicts=pretrained_state_dicts,
+        metrics_path=log_metrics_path,
+        # 全体でおよそ100点の学習曲線が得られる間隔で記録する
+        metrics_interval=max(1, epochs // 100),
+        metrics_episodes=config.get("metrics_episodes", 30),
         show_progress=False,
         verbose=False,
     )
