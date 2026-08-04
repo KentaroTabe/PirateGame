@@ -11,6 +11,8 @@ venv.bak/
 Python
 
 pycache/
+__pycache__/
+smoke_output/
 *.py[cod]
 *$py.class
 *.so

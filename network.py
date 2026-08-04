@@ -6,7 +6,7 @@ class Net(nn.Module):
     """
     Tianshouで利用するための、行動マスク機能付きMLP（多層パーセプトロン）ネットワーク
     """
-    def __init__(self, state_shape, action_shape, hidden_sizes=[128, 128], device="cpu"):
+    def __init__(self, state_shape, action_shape, hidden_sizes=(128, 128), device="cpu"):
         super().__init__()
         self.device = device
         
@@ -21,7 +21,7 @@ class Net(nn.Module):
         
         self.model = nn.Sequential(*layers).to(device)
 
-    def forward(self, obs, state=None, info={}):
+    def forward(self, obs, state=None, info=None):
         """
         obs: TianshouのBatchオブジェクト、または辞書型（observation, action_maskを含む）
         """
