@@ -1,7 +1,7 @@
 {
     "num_agents": 6,
     "total_gems": 5,
-    "L": 100,
+    "L": 5,
     "agent_weights": [
         10.0,
         15.0,
