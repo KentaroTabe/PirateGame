@@ -60,8 +60,8 @@ def load_policy_manager(config, model_path):
     return manager
 
 
-def _print_events(env):
-    for event in env.pop_events():
+def _print_events(events):
+    for event in events:
         if event["type"] == "vote_result":
             print(f"\n[判定] 賛成: {event['yes']} / 生存者: {event['n_alive']}")
             if event["passed"]:
@@ -107,7 +107,7 @@ def run_game(policy_manager=None, config=None, model_path='policy.pth', seed=Non
     raw_env.reset(seed=seed)
 
     final_rewards = {a: 0.0 for a in agents}
-    n_proposals = 0
+    vote_results = []  # (提案者, 可決したか) の履歴
 
     with torch.inference_mode():
         for agent in raw_env.agent_iter():
@@ -128,16 +128,15 @@ def run_game(policy_manager=None, config=None, model_path='policy.pth', seed=Non
                     vote_str = "👍 賛成 (YES)" if action == raw_env.ACTION_YES else "👎 反対 (NO)"
                     print(f"💬 => {agent} は {vote_str} を選択しました！")
 
-            if raw_env.phase == "PROPOSE":
-                n_proposals += 1
-
             raw_env.step(action)
 
+            events = raw_env.pop_events()
+            vote_results.extend(
+                (e["proposer"], e["passed"]) for e in events if e["type"] == "vote_result"
+            )
             if verbose:
-                _print_events(raw_env)
+                _print_events(events)
                 raw_env.render()
-            else:
-                raw_env.pop_events()
 
     deaths = [a for a in agents if not raw_env.alive[a]]
 
@@ -147,7 +146,7 @@ def run_game(policy_manager=None, config=None, model_path='policy.pth', seed=Non
         for a, r in final_rewards.items():
             print(f" - {a}: {r}")
 
-    return {"rewards": final_rewards, "deaths": deaths, "n_proposals": n_proposals}
+    return {"rewards": final_rewards, "deaths": deaths, "vote_results": vote_results}
 
 
 def evaluate(policy_manager=None, config=None, model_path='policy.pth',
@@ -168,6 +167,8 @@ def evaluate(policy_manager=None, config=None, model_path='policy.pth',
     agents = PirateGemEnv(config).possible_agents
     reward_sums = {a: 0.0 for a in agents}
     death_counts = {a: 0 for a in agents}
+    propose_counts = {a: 0 for a in agents}
+    passed_counts = {a: 0 for a in agents}
     total_proposals = 0
 
     for ep in range(n_episodes):
@@ -182,11 +183,20 @@ def evaluate(policy_manager=None, config=None, model_path='policy.pth',
             reward_sums[a] += result["rewards"][a]
             if a in result["deaths"]:
                 death_counts[a] += 1
-        total_proposals += result["n_proposals"]
+        for proposer, passed in result["vote_results"]:
+            propose_counts[proposer] += 1
+            if passed:
+                passed_counts[proposer] += 1
+            total_proposals += 1
 
     stats = {
         "avg_rewards": {a: reward_sums[a] / n_episodes for a in agents},
         "death_rates": {a: death_counts[a] / n_episodes for a in agents},
+        "propose_counts": propose_counts,
+        "pass_rates": {
+            a: (passed_counts[a] / propose_counts[a]) if propose_counts[a] else None
+            for a in agents
+        },
         "avg_proposals": total_proposals / n_episodes,
         "n_episodes": n_episodes,
     }
@@ -194,7 +204,13 @@ def evaluate(policy_manager=None, config=None, model_path='policy.pth',
     print(f"\n========== 評価統計 ({n_episodes} エピソード) ==========")
     print(f"平均提案回数: {stats['avg_proposals']:.2f}")
     for a in agents:
-        print(f" - {a}: 平均報酬 {stats['avg_rewards'][a]:+.2f} / 死亡率 {stats['death_rates'][a]:.1%}")
+        pass_rate = stats["pass_rates"][a]
+        pass_str = f"{pass_rate:.1%}" if pass_rate is not None else "---"
+        print(
+            f" - {a}: 平均報酬 {stats['avg_rewards'][a]:+.2f}"
+            f" / 死亡率 {stats['death_rates'][a]:.1%}"
+            f" / 提案 {propose_counts[a]}回 (可決率 {pass_str})"
+        )
 
     return stats
 

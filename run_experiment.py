@@ -174,9 +174,12 @@ def run_experiment():
         f.write(f"【評価統計（{eval_stats['n_episodes']} エピソード）】\n")
         f.write(f" - 平均提案回数: {eval_stats['avg_proposals']:.2f}\n")
         for a in eval_stats['avg_rewards']:
+            pass_rate = eval_stats['pass_rates'][a]
+            pass_str = f"{pass_rate:.1%}" if pass_rate is not None else "---"
             f.write(
                 f" - {a}: 平均報酬 {eval_stats['avg_rewards'][a]:+.2f}"
-                f" / 死亡率 {eval_stats['death_rates'][a]:.1%}\n"
+                f" / 死亡率 {eval_stats['death_rates'][a]:.1%}"
+                f" / 提案 {eval_stats['propose_counts'][a]}回 (可決率 {pass_str})\n"
             )
         f.write("=========================================\n")
 
