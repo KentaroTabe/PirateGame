@@ -54,8 +54,8 @@ def setup_directories():
     return n
 
 
-def run_experiment():
-    with open("config.json", "r", encoding="utf-8") as f:
+def run_experiment(config_path="config.json"):
+    with open(config_path, "r", encoding="utf-8") as f:
         config = json.load(f)
 
     n = setup_directories()
@@ -175,6 +175,7 @@ def run_experiment():
     with open(result_path, "w", encoding="utf-8") as f:
         f.write("=========================================\n")
         f.write("【環境設定】\n")
+        f.write(f" - 設定ファイル: {config_path}\n")
         f.write(f" - 海賊の人数: {config['num_agents']}人\n")
         f.write(f" - 宝石の総数: {config['total_gems']}個\n")
         f.write(f" - 命の重さ(ペナルティ L): {config['L']}\n")
@@ -213,4 +214,4 @@ def run_experiment():
 
 
 if __name__ == '__main__':
-    run_experiment()
+    run_experiment(sys.argv[1] if len(sys.argv) > 1 else "config.json")
