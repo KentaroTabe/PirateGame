@@ -87,9 +87,14 @@ def analyze(csv_path, settings):
     ]
     order_epoch, order_tail = _stable_point(orderly, epochs, min_tail)
 
+    # 死亡込みの全期間平均。死亡なし記録点の平均は、頻繁に死ぬエージェントほど
+    # 「罰を受けた区間」が除外されて有利に見えるため、両方を併記して比較する。
+    overall_means = {a: float(df[f"rew_{a}"].mean()) for a in agent_names}
+
     result = {
         "csv": csv_path,
         "total_epochs": int(epochs[-1]),
+        "overall_means": overall_means,
         "order_epoch": order_epoch,
         "order_tail": order_tail,
         "peaceful_points": 0,
@@ -188,7 +193,9 @@ def main():
         print(f"  死亡なしの記録点: {r['peaceful_points']}/{r['total_points']}")
         if r["final_rewards"]:
             rewards = " / ".join(f"{a}:{v:+.2f}" for a, v in r["final_rewards"].items())
-            print(f"  最終区間の平均取り分: {rewards}")
+            print(f"  最終区間の平均取り分（死亡なし記録点）: {rewards}")
+        overall = " / ".join(f"{a}:{v:+.2f}" for a, v in r["overall_means"].items())
+        print(f"  全期間平均（死亡込み）: {overall}")
         print("-" * 78)
 
 
