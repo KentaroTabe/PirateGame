@@ -60,6 +60,22 @@ def main(out_dir):
     )
 
     assert eval_stats["n_episodes"] == 20
+
+    print("\n=== フェーズ3: 事前学習なしでの学習（対照実験の経路） ===")
+    scratch_result, scratch_manager = train_agent(
+        args=args, config=config,
+        model_path=os.path.join(out_dir, "policy_scratch_smoke.pth"),
+        pretrained_state_dicts=None,
+        metrics_path=os.path.join(out_dir, "log_metrics_scratch_smoke.csv"),
+        metrics_interval=1, metrics_episodes=10,
+        show_progress=False, verbose=False,
+    )
+    scratch_stats = evaluate(
+        policy_manager=scratch_manager, config=config,
+        n_episodes=20, verbose_episodes=0,
+    )
+    assert scratch_stats["n_episodes"] == 20
+
     print("\n✅ スモークテスト完了")
 
 

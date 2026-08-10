@@ -1,0 +1,9 @@
+{
+    "smooth_window_ratio": 15,
+    "reference_tail_ratio": 0.3,
+    "tolerance_floor": 0.25,
+    "tolerance_noise_factor": 2.0,
+    "min_stable_tail_ratio": 0.3,
+    "first_pass_threshold": 0.9,
+    "death_threshold": 0.05
+}
