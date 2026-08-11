@@ -99,6 +99,7 @@ def run_experiment(config_path="config.json"):
     args = get_args()
     args.device = 'cpu'  # 必要に応じて 'cuda' などに変更してください
     args.num_envs = 4    # 同時並列処理する環境（プロセス）数。CPUコア数に合わせて調整してください
+    args.seed = config.get("seed", args.seed)
 
     epochs = config.get("train_epochs", 50)
     args.epoch = epochs
@@ -116,6 +117,7 @@ def run_experiment(config_path="config.json"):
     args.n_step = n * (n + 1) // 2 + n - 2
 
     print(f"💡 【自動調整】エポック数: {epochs}")
+    print(f"    - 乱数シード: {args.seed}")
     print(f"    - バッファサイズ: {args.buffer_size}")
     print(f"    - 学習率 (lr): {args.lr:.5f}")
     print(f"    - 並列プロセス数: {args.num_envs}")
@@ -181,6 +183,8 @@ def run_experiment(config_path="config.json"):
         f.write(f" - 命の重さ(ペナルティ L): {config['L']}\n")
         f.write(f" - 権力ウェイト: {config['agent_weights']}\n")
         f.write(f" - 提案者の選出: {'固定順' if config.get('fixed_order') else 'agent_weights に基づくランダム順'}\n")
+        f.write(f" - 乱数シード: {args.seed}\n")
+        f.write(f" - 学習中メトリクスの評価エピソード数: {config.get('metrics_episodes', 30)}\n")
         f.write("-----------------------------------------\n")
         f.write("【事前学習（固定順一般解の埋め込み）】\n")
         if pretrain_stats:

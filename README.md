@@ -179,4 +179,15 @@ python export_onnx.py
 
 実験から得られた知見（政治レジームの分析・学習上の落とし穴など）は
 [`docs/findings.md`](docs/findings.md) にまとめています。
-権力重みパターンごとの個別実験レポートは [`docs/reports/`](docs/reports/) にあります。
+
+実験はラウンド単位で実施し、ラウンドごとにレポートを作成しています。
+
+| ラウンド | 主題 | レポート |
+|---|---|---|
+| 第1 | 権力重みパターンの比較（試行6〜9） | [`docs/reports/round1.md`](docs/reports/round1.md) |
+| 第2 | 事前学習と後継者の分離（試行10〜12） | [`docs/reports/round2.md`](docs/reports/round2.md) |
+| 第3 | 再現性・要因計画の完成・L の効果（試行13〜16） | [`docs/reports/round3.md`](docs/reports/round3.md) |
+
+各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
+`scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。
+収束状況の分析は `scripts/analyze_convergence.sh` を使います。
