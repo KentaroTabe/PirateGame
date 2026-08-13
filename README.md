@@ -189,6 +189,7 @@ python export_onnx.py
 | 第3 | 再現性・要因計画の完成・L の効果（試行13〜16） | [`docs/reports/round3.md`](docs/reports/round3.md) |
 | 第4 | L 軸の解明（試行17〜20） | [`docs/reports/round4.md`](docs/reports/round4.md) |
 | 第5 | 再現・閾値の細分化・一般性（試行21〜24） | [`docs/reports/round5.md`](docs/reports/round5.md) |
+| 第6 | 撤回した主張の決着と新仮説の検証（試行25〜28） | [`docs/reports/round6.md`](docs/reports/round6.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。
