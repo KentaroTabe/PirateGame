@@ -107,7 +107,27 @@ def analyze(csv_path, settings):
         "reward_tail": 0.0,
         "tolerance": None,
         "final_rewards": {},
+        "policy_epoch": None,
+        "policy_tail": 0.0,
+        "policy_changes": None,
     }
+
+    # --- 方策収束: 記録された提案そのものが変わらなくなったエポック ---
+    # 順位にも報酬の大きさにも依存しないため、首位の分離度による交絡を受けない
+    # （首位交代回数が持つ交絡については docs/reports/round6.md を参照）。
+    prop_cols = [f"prop_{a}" for a in agent_names if f"prop_{a}" in df.columns]
+    if prop_cols:
+        unchanged = [True]
+        changes = 0
+        for i in range(1, len(df)):
+            same = all(df[c].iloc[i] == df[c].iloc[i - 1] for c in prop_cols)
+            unchanged.append(same)
+            if not same:
+                changes += 1
+        policy_epoch, policy_tail = _stable_point(unchanged, epochs, min_tail)
+        result["policy_epoch"] = policy_epoch
+        result["policy_tail"] = policy_tail
+        result["policy_changes"] = changes
 
     # --- 分配・レジーム収束: 死亡が出なかった記録点のみを使う ---
     peaceful = df[df[death_cols].max(axis=1) == 0].reset_index(drop=True)
@@ -189,6 +209,9 @@ def main():
             print(f"  首位の交代回数: {r['regime_changes']}回")
         print(f"  分配収束: {_format(r['reward_epoch'], r['reward_tail'])}"
               + (f" / 許容差 {r['tolerance']:.2f}" if r["tolerance"] else ""))
+        if r.get("policy_changes") is not None:
+            print(f"  方策収束: {_format(r['policy_epoch'], r['policy_tail'])}"
+                  f" / 提案の変更回数 {r['policy_changes']}回")
         print(f"  秩序収束: {_format(r['order_epoch'], r['order_tail'])}")
         print(f"  死亡なしの記録点: {r['peaceful_points']}/{r['total_points']}")
         if r["final_rewards"]:

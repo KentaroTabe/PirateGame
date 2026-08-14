@@ -9,7 +9,7 @@ import argparse
 
 import numpy as np
 import torch
-from tianshou.data import Collector, VectorReplayBuffer
+from tianshou.data import Batch, Collector, VectorReplayBuffer
 from tianshou.env import PettingZooEnv, SubprocVectorEnv
 from tianshou.policy import DQNPolicy, MultiAgentPolicyManager
 from tianshou.trainer import OffpolicyTrainer
@@ -67,6 +67,36 @@ def build_policy_manager(env, args, pretrained_state_dicts=None):
 
     manager = MultiAgentPolicyManager(policies=[policies[agent] for agent in agents], env=env)
     return manager, policies
+
+
+def record_proposals(policies, env, agents):
+    """各エージェントが「全員生存・自分が提案者」の局面で選ぶ分配案を返す。
+
+    順位や報酬に依らず方策そのものを観測するための指標。学習中に方策が
+    何回変わったかを数えれば、首位の分離度に交絡されない安定性が測れる
+    （首位交代回数は、首位が他を引き離しているほど起きにくいという
+    交絡を持つ。docs/reports/round6.md 参照）。
+    """
+    from pretrain import _build_observation
+
+    alive = set(range(env.n_agents))
+    zero_proposal = (0,) * env.n_agents
+    n_dist = len(env.DISTRIBUTIONS)
+
+    proposals = []
+    for idx, agent in enumerate(agents):
+        obs = _build_observation(env, alive, idx, zero_proposal)
+        # 全員生存の局面ではすべての分配案が有効（死者に配る案が存在しない）
+        mask = np.zeros(n_dist + 2, dtype=bool)
+        mask[:n_dist] = True
+        batch = Batch(obs=Batch(obs=obs[None, :], mask=mask[None, :]), info={})
+        with torch.no_grad():
+            action = int(policies[agent](batch).act[0])
+        if action < len(env.DISTRIBUTIONS):
+            proposals.append("-".join(str(v) for v in env.DISTRIBUTIONS[action]))
+        else:
+            proposals.append("invalid")
+    return proposals
 
 
 def collect_political_metrics(policy_manager, policies, test_collector, agents, n_episode):
@@ -149,6 +179,7 @@ def train_agent(args=None, config=None, model_path='policy.pth',
             header = (
                 ["epoch", "env_step", "len_mean", "first_pass_rate"]
                 + [f"rew_{x}" for x in names] + [f"death_{x}" for x in names]
+                + [f"prop_{x}" for x in names]
             )
             mf.write(",".join(header) + "\n")
             for epoch, epoch_stat, info in trainer:
@@ -160,6 +191,7 @@ def train_agent(args=None, config=None, model_path='policy.pth',
                     row = (
                         [epoch, epoch_stat["env_step"], m["len_mean"], m["first_pass_rate"]]
                         + list(m["rew_mean"]) + list(m["death_rate"])
+                        + record_proposals(policies, env.env, agents)
                     )
                     mf.write(",".join(
                         f"{v:.4f}" if isinstance(v, float) else str(v) for v in row
