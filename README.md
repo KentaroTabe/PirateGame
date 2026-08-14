@@ -184,6 +184,7 @@ python export_onnx.py
 
 | ラウンド | 主題 | レポート |
 |---|---|---|
+| 事前 | リファクタリング以前の33試行 | [`docs/reports/round0.md`](docs/reports/round0.md) |
 | 第1 | 権力重みパターンの比較（試行6〜9） | [`docs/reports/round1.md`](docs/reports/round1.md) |
 | 第2 | 事前学習と後継者の分離（試行10〜12） | [`docs/reports/round2.md`](docs/reports/round2.md) |
 | 第3 | 再現性・要因計画の完成・L の効果（試行13〜16） | [`docs/reports/round3.md`](docs/reports/round3.md) |
