@@ -115,19 +115,42 @@ def analyze(csv_path, settings):
     # --- 方策収束: 記録された提案そのものが変わらなくなったエポック ---
     # 順位にも報酬の大きさにも依存しないため、首位の分離度による交絡を受けない
     # （首位交代回数が持つ交絡については docs/reports/round6.md を参照）。
-    prop_cols = [f"prop_{a}" for a in agent_names if f"prop_{a}" in df.columns]
+    prop_cols = [(a, f"prop_{a}") for a in agent_names if f"prop_{a}" in df.columns]
     if prop_cols:
-        unchanged = [True]
-        changes = 0
-        for i in range(1, len(df)):
-            same = all(df[c].iloc[i] == df[c].iloc[i - 1] for c in prop_cols)
-            unchanged.append(same)
-            if not same:
-                changes += 1
+        def canonical(row_idx):
+            """提案を「自分の取り分 + 他者の取り分の多重集合」に正規化する。
+
+            誰が買収されるかは再現しないことが分かっている（同一設定の
+            独立実行で買収相手が総入れ替えになる。docs/reports/round3.md）。
+            受け取り手の識別子を落とし、取り分の構成だけを方策とみなす。
+            """
+            form = []
+            for idx, (agent, col) in enumerate(prop_cols):
+                parts = str(df[col].iloc[row_idx]).split("-")
+                if len(parts) != len(prop_cols):
+                    form.append(str(df[col].iloc[row_idx]))
+                    continue
+                own = parts[idx]
+                others = sorted(parts[:idx] + parts[idx + 1:])
+                form.append(own + "|" + ",".join(others))
+            return tuple(form)
+
+        forms = [canonical(i) for i in range(len(df))]
+        unchanged = [True] + [forms[i] == forms[i - 1] for i in range(1, len(df))]
         policy_epoch, policy_tail = _stable_point(unchanged, epochs, min_tail)
         result["policy_epoch"] = policy_epoch
         result["policy_tail"] = policy_tail
-        result["policy_changes"] = changes
+        result["policy_changes"] = sum(1 for ok in unchanged[1:] if not ok)
+
+        # エージェント別の変更回数。めったに提案しないエージェントの方策は
+        # ほとんど学習されず揺れ続けるため、全体をまとめて数えると
+        # 主要な提案者の安定性が埋もれる。
+        per_agent = {}
+        for idx, (agent, _) in enumerate(prop_cols):
+            per_agent[agent] = sum(
+                1 for i in range(1, len(df)) if forms[i][idx] != forms[i - 1][idx]
+            )
+        result["policy_changes_per_agent"] = per_agent
 
     # --- 分配・レジーム収束: 死亡が出なかった記録点のみを使う ---
     peaceful = df[df[death_cols].max(axis=1) == 0].reset_index(drop=True)
@@ -210,8 +233,12 @@ def main():
         print(f"  分配収束: {_format(r['reward_epoch'], r['reward_tail'])}"
               + (f" / 許容差 {r['tolerance']:.2f}" if r["tolerance"] else ""))
         if r.get("policy_changes") is not None:
-            print(f"  方策収束: {_format(r['policy_epoch'], r['policy_tail'])}"
-                  f" / 提案の変更回数 {r['policy_changes']}回")
+            print(f"  方策収束（全員）: {_format(r['policy_epoch'], r['policy_tail'])}"
+                  f" / 取り分構成の変更 {r['policy_changes']}回")
+            per = " / ".join(
+                f"{a}:{n}回" for a, n in r["policy_changes_per_agent"].items()
+            )
+            print(f"  エージェント別の提案の変更: {per}")
         print(f"  秩序収束: {_format(r['order_epoch'], r['order_tail'])}")
         print(f"  死亡なしの記録点: {r['peaceful_points']}/{r['total_points']}")
         if r["final_rewards"]:
