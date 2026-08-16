@@ -108,6 +108,10 @@ def run_game(policy_manager=None, config=None, model_path='policy.pth', seed=Non
 
     final_rewards = {a: 0.0 for a in agents}
     vote_results = []  # (提案者, 可決したか) の履歴
+    # 提案者が自分の提案に投じた票の集計。excess_vote_penalty を課すと
+    # 提案者自身の賛成票も「過剰な賛成票」に数えられるため、自分の提案に
+    # 反対する動機が生じる（docs/reports/round0.md 参照）。
+    self_votes = {"yes": 0, "no": 0}
 
     with torch.inference_mode():
         for agent in raw_env.agent_iter():
@@ -120,6 +124,10 @@ def run_game(policy_manager=None, config=None, model_path='policy.pth', seed=Non
 
             batch = Batch(obs=Batch([obs]), info=Batch([info]))
             action = policy_manager.policies[agent](batch).act[0]
+
+            if raw_env.phase != "PROPOSE" and agent == raw_env.proposer:
+                key = "yes" if action == raw_env.ACTION_YES else "no"
+                self_votes[key] += 1
 
             if verbose:
                 if raw_env.phase == "PROPOSE":
@@ -146,7 +154,8 @@ def run_game(policy_manager=None, config=None, model_path='policy.pth', seed=Non
         for a, r in final_rewards.items():
             print(f" - {a}: {r}")
 
-    return {"rewards": final_rewards, "deaths": deaths, "vote_results": vote_results}
+    return {"rewards": final_rewards, "deaths": deaths, "vote_results": vote_results,
+            "self_votes": self_votes}
 
 
 def evaluate(policy_manager=None, config=None, model_path='policy.pth',
@@ -170,6 +179,8 @@ def evaluate(policy_manager=None, config=None, model_path='policy.pth',
     propose_counts = {a: 0 for a in agents}
     passed_counts = {a: 0 for a in agents}
     total_proposals = 0
+    self_yes = 0
+    self_no = 0
 
     for ep in range(n_episodes):
         verbose = ep < verbose_episodes
@@ -188,8 +199,13 @@ def evaluate(policy_manager=None, config=None, model_path='policy.pth',
             if passed:
                 passed_counts[proposer] += 1
             total_proposals += 1
+        self_yes += result["self_votes"]["yes"]
+        self_no += result["self_votes"]["no"]
 
+    self_total = self_yes + self_no
     stats = {
+        "self_reject_rate": (self_no / self_total) if self_total else None,
+        "self_votes": {"yes": self_yes, "no": self_no},
         "avg_rewards": {a: reward_sums[a] / n_episodes for a in agents},
         "death_rates": {a: death_counts[a] / n_episodes for a in agents},
         "propose_counts": propose_counts,
@@ -203,6 +219,9 @@ def evaluate(policy_manager=None, config=None, model_path='policy.pth',
 
     print(f"\n========== 評価統計 ({n_episodes} エピソード) ==========")
     print(f"平均提案回数: {stats['avg_proposals']:.2f}")
+    if stats["self_reject_rate"] is not None:
+        print(f"提案者が自分の提案に反対した割合: {stats['self_reject_rate']:.1%}"
+              f" ({self_no}/{self_total})")
     for a in agents:
         pass_rate = stats["pass_rates"][a]
         pass_str = f"{pass_rate:.1%}" if pass_rate is not None else "---"

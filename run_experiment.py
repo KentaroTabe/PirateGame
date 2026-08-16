@@ -204,6 +204,10 @@ def run_experiment(config_path="config.json"):
         f.write("-----------------------------------------\n")
         f.write(f"【評価統計（{eval_stats['n_episodes']} エピソード）】\n")
         f.write(f" - 平均提案回数: {eval_stats['avg_proposals']:.2f}\n")
+        if eval_stats.get("self_reject_rate") is not None:
+            sv = eval_stats["self_votes"]
+            f.write(f" - 提案者が自分の提案に反対した割合: "
+                    f"{eval_stats['self_reject_rate']:.1%} ({sv['no']}/{sv['no'] + sv['yes']})\n")
         for a in eval_stats['avg_rewards']:
             pass_rate = eval_stats['pass_rates'][a]
             pass_str = f"{pass_rate:.1%}" if pass_rate is not None else "---"
