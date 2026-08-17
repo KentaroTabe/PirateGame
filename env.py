@@ -3,6 +3,8 @@
 ルール概要:
     1. 提案者が宝石の分配案を提示する（PROPOSE フェーズ）。
     2. 生存者全員（提案者含む）が順に賛成/反対を投票する（VOTE フェーズ）。
+       投票順は生存者の固定順（A, B, C…）。proposer_votes_last=True なら
+       提案者だけを末尾に回すので、提案者は他者の票を見てから決められる。
     3. 賛成が過半数（生存者数の半分以上）なら可決し、分配どおりの報酬でゲーム終了。
     4. 否決なら提案者は海に落とされ（報酬 -L で死亡）、次の提案者が選ばれる。
        次の提案者は fixed_order=True なら生存者中の最若番、
@@ -48,6 +50,10 @@ class PirateGemEnv(AECEnv):
         # 過剰得票ペナルティ: 可決時、必要最小票を超えた賛成1票につき提案者の報酬を減らす。
         # ゲーム理論的な一般解と一致させたい場合は 0.0 にする。
         self.excess_vote_penalty = config.get("excess_vote_penalty", 0.0)
+        # 投票順: True なら提案者を最後に回す（提案者は他者の票を見てから決められる）。
+        self.proposer_votes_last = config.get("proposer_votes_last", False)
+        # 観測に投票の途中経過（これまでの賛成数・投票済み人数）を含めるか。
+        self.observe_vote_tally = config.get("observe_vote_tally", False)
 
         self.possible_agents = [f"agent_{chr(65 + i)}" for i in range(self.n_agents)]
         self.agent_name_mapping = dict(zip(self.possible_agents, range(self.n_agents)))
@@ -69,7 +75,11 @@ class PirateGemEnv(AECEnv):
         self.action_spaces = {agent: Discrete(self.TOTAL_ACTIONS) for agent in self.possible_agents}
 
         # 観測: [生存フラグ(N), 権力ウェイト(N), 提案者one-hot(N), 現在の分配案(N)] = 4N 次元
+        # observe_vote_tally が True の場合、末尾に [これまでの賛成数, 投票済み人数] を足す。
+        self.VOTE_TALLY_DIM = 2
         obs_dim = 4 * self.n_agents
+        if self.observe_vote_tally:
+            obs_dim += self.VOTE_TALLY_DIM
         obs_high = float(max(100, self.total_gems))
         self.observation_spaces = {
             agent: Dict({
@@ -117,7 +127,11 @@ class PirateGemEnv(AECEnv):
         proposer_onehot = [1.0 if a == self.proposer else 0.0 for a in self.possible_agents]
         proposal = list(self.current_proposal)
 
-        obs = np.array(alive_flag + weights + proposer_onehot + proposal, dtype=np.float32)
+        features = alive_flag + weights + proposer_onehot + proposal
+        if self.observe_vote_tally:
+            features = features + self._vote_tally()
+
+        obs = np.array(features, dtype=np.float32)
 
         mask = np.zeros(self.TOTAL_ACTIONS, dtype=np.int8)
         if self.alive[agent]:
@@ -142,7 +156,7 @@ class PirateGemEnv(AECEnv):
             self.current_proposal = self.DISTRIBUTIONS[action]
             self.phase = PHASE_VOTE
             self.votes = {}
-            self.voting_order = [a for a in self.possible_agents if self.alive[a]]
+            self.voting_order = self._build_voting_order()
             self.agent_selection = self.voting_order[0]
 
         elif self.phase == PHASE_VOTE:
@@ -177,6 +191,18 @@ class PirateGemEnv(AECEnv):
             if all(amount == 0 or self.alive[self.possible_agents[j]] for j, amount in enumerate(dist)):
                 indices.append(i)
         return indices
+
+    def _build_voting_order(self):
+        """投票順を作る。proposer_votes_last なら提案者を末尾に回す。"""
+        order = [a for a in self.possible_agents if self.alive[a]]
+        if self.proposer_votes_last and self.proposer in order:
+            order.remove(self.proposer)
+            order.append(self.proposer)
+        return order
+
+    def _vote_tally(self):
+        """観測用の投票の途中経過 [これまでの賛成数, 投票済み人数]。"""
+        return [float(sum(1 for v in self.votes.values() if v)), float(len(self.votes))]
 
     def _select_next_proposer(self):
         alive_agents = [a for a in self.possible_agents if self.alive[a]]

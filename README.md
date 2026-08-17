@@ -130,6 +130,10 @@ pip install -r requirements.txt
 - `fixed_order`: 学習・評価環境の提案者選出（`false` = 権力ウェイトに基づくランダム順）
 - `excess_vote_penalty`: 可決時、必要最小票を超えた賛成1票につき提案者の報酬から引く量
   （一般解と整合させる場合は `0.0`）
+- `proposer_votes_last`: `true` で提案者だけを投票順の末尾に回す（既定 `false`）。
+  提案者が他者の票を見てから自分の票を決められるようになる
+- `observe_vote_tally`: `true` で観測の末尾に `[これまでの賛成数, 投票済み人数]` を足す
+  （既定 `false`、観測が 4N → 4N+2 次元になる）
 - `pretrain` / `pretrain_epochs`: 固定順一般解の事前学習の有効化と回帰エポック数
 - `eval_episodes` / `eval_verbose_episodes`: 評価エピソード数と詳細ログを出すエピソード数
 
@@ -194,6 +198,7 @@ python export_onnx.py
 | 第7 | 方策収束の直接測定（試行29〜32） | [`docs/reports/round7.md`](docs/reports/round7.md) |
 | 第8 | 方策指標による L 曲線の完成（試行33〜36） | [`docs/reports/round8.md`](docs/reports/round8.md) |
 | 第9 | 過剰賛成票ペナルティの検証（試行37〜40） | [`docs/reports/round9.md`](docs/reports/round9.md) |
+| 第10 | 自己反対が現れない理由の切り分け（試行41〜45） | [`docs/reports/round10.md`](docs/reports/round10.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。

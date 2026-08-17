@@ -121,6 +121,106 @@ class TestPirateGemEnv(unittest.TestCase):
         env.reset(seed=123)
         self.assertEqual(env.proposer, first)
 
+    # ------------------------------------------------------------------
+    # proposer_votes_last（既定は False = 従来どおり固定順）
+    # ------------------------------------------------------------------
+    def test_voting_order_defaults_to_fixed_order(self):
+        env = make_env()
+        env.reset(seed=0)
+        self.assertEqual(env.proposer, "agent_A")
+
+        self._propose(env, (2, 1, 1))
+        self.assertEqual(env.voting_order, ["agent_A", "agent_B", "agent_C"])
+        self.assertEqual(env.agent_selection, "agent_A")
+
+    def test_proposer_votes_last_moves_proposer_to_end(self):
+        env = make_env(proposer_votes_last=True)
+        env.reset(seed=0)
+        self.assertEqual(env.proposer, "agent_A")
+
+        self._propose(env, (2, 1, 1))
+        self.assertEqual(env.voting_order, ["agent_B", "agent_C", "agent_A"])
+        self.assertEqual(env.agent_selection, "agent_B")
+
+    def test_proposer_votes_last_keeps_others_relative_order(self):
+        """提案者が中間の場合、他者の相対順は崩れない。"""
+        env = make_env(proposer_votes_last=True, fixed_order=False,
+                       agent_weights=[1.0, 1000.0, 1.0])
+        env.reset(seed=0)
+        self.assertEqual(env.proposer, "agent_B")
+
+        self._propose(env, (1, 2, 1))
+        self.assertEqual(env.voting_order, ["agent_A", "agent_C", "agent_B"])
+
+    def test_proposer_votes_last_can_reject_own_proposal_after_seeing_votes(self):
+        """提案者が最後に投票し、可決を保ったまま過剰票を1つ減らせる。"""
+        env = make_env(proposer_votes_last=True, excess_vote_penalty=1.0)
+        env.reset(seed=0)
+
+        self._propose(env, (2, 1, 1))
+        self._vote(env, True)   # B
+        self._vote(env, True)   # C → この時点で必要2票に到達
+        self._vote(env, False)  # A（提案者）は反対しても可決は保たれる
+
+        self.assertTrue(all(env.terminations.values()))
+        # 賛成2票 = 必要2票ちょうどなので過剰票は0、罰は発生しない
+        self.assertEqual(env.rewards["agent_A"], 2.0)
+
+    def test_proposer_votes_last_survives_after_a_rejection(self):
+        """否決で提案者が代わっても、新しい提案者が末尾に回る。"""
+        env = make_env(proposer_votes_last=True)
+        env.reset(seed=0)
+
+        self._propose(env, (4, 0, 0))
+        self._vote(env, False)  # B
+        self._vote(env, False)  # C
+        self._vote(env, False)  # A（提案者）
+
+        self.assertFalse(env.alive["agent_A"])
+        self.assertEqual(env.proposer, "agent_B")
+
+        self._propose(env, (0, 3, 1))
+        self.assertEqual(env.voting_order, ["agent_C", "agent_B"])
+
+    # ------------------------------------------------------------------
+    # observe_vote_tally（既定は False = 従来どおり 4N 次元）
+    # ------------------------------------------------------------------
+    def test_observation_excludes_vote_tally_by_default(self):
+        env = make_env()
+        env.reset(seed=0)
+        expected_dim = 4 * env.n_agents
+        self.assertEqual(env.observation_space("agent_A")["observation"].shape, (expected_dim,))
+        self.assertEqual(env.observe("agent_A")["observation"].shape, (expected_dim,))
+
+    def test_observation_includes_vote_tally_when_enabled(self):
+        env = make_env(observe_vote_tally=True)
+        env.reset(seed=0)
+        expected_dim = 4 * env.n_agents + env.VOTE_TALLY_DIM
+        self.assertEqual(env.observation_space("agent_A")["observation"].shape, (expected_dim,))
+
+        # 提案前は誰も投票していない
+        self.assertEqual(list(env.observe("agent_A")["observation"][-2:]), [0.0, 0.0])
+
+        self._propose(env, (2, 1, 1))
+        self._vote(env, True)   # A
+        self.assertEqual(list(env.observe("agent_B")["observation"][-2:]), [1.0, 1.0])
+
+        self._vote(env, False)  # B → 賛成1・投票2
+        self.assertEqual(list(env.observe("agent_C")["observation"][-2:]), [1.0, 2.0])
+
+    def test_vote_tally_resets_for_the_next_proposal(self):
+        env = make_env(observe_vote_tally=True)
+        env.reset(seed=0)
+
+        self._propose(env, (4, 0, 0))
+        self._vote(env, False)  # A
+        self._vote(env, False)  # B
+        self._vote(env, False)  # C → 否決、A が死亡
+
+        self.assertEqual(env.proposer, "agent_B")
+        self._propose(env, (0, 3, 1))
+        self.assertEqual(list(env.observe("agent_B")["observation"][-2:]), [0.0, 0.0])
+
 
 if __name__ == '__main__':
     unittest.main()
