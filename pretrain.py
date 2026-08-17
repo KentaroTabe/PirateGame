@@ -19,12 +19,26 @@ from network import Net
 from solver import FixedOrderSolver
 
 
-def _build_observation(env, alive_set, proposer, proposal):
-    """env.observe() と同一フォーマットの観測ベクトルを構築する。"""
+def _build_observation(env, alive_set, proposer, proposal, vote_tally=None):
+    """env.observe() と同一フォーマットの観測ベクトルを構築する。
+
+    env.observe_vote_tally が有効な場合は末尾に投票の途中経過を足す。
+    vote_tally 未指定なら「まだ誰も投票していない」= [0, 0] とみなす。
+    """
     alive_flag = [1.0 if i in alive_set else 0.0 for i in range(env.n_agents)]
     weights = list(env.agent_weights)
     proposer_onehot = [1.0 if i == proposer else 0.0 for i in range(env.n_agents)]
-    return np.array(alive_flag + weights + proposer_onehot + list(proposal), dtype=np.float32)
+    features = alive_flag + weights + proposer_onehot + list(proposal)
+
+    if env.observe_vote_tally:
+        tally = [0.0] * env.VOTE_TALLY_DIM if vote_tally is None else list(vote_tally)
+        if len(tally) != env.VOTE_TALLY_DIM:
+            raise ValueError(
+                f"vote_tally の長さ {len(tally)} が VOTE_TALLY_DIM {env.VOTE_TALLY_DIM} と一致しません"
+            )
+        features = features + tally
+
+    return np.array(features, dtype=np.float32)
 
 
 def _valid_dist_indices(env, alive_set):
@@ -132,6 +146,14 @@ def pretrain_agents(config, device="cpu", hidden_sizes=(128, 128),
                     epochs=200, lr=1e-3, batch_size=512, seed=0, verbose=True):
     """全エージェントを事前学習し、{agent名: state_dict} と統計を返す。"""
     env = PirateGemEnv(config)
+    # 固定順一般解は投票の途中経過を状態に持たないため、observe_vote_tally が
+    # 有効だと投票フェーズの目標 Q が定義できない（誤った目標を埋め込むより落とす）。
+    if env.observe_vote_tally:
+        raise ValueError(
+            "observe_vote_tally が有効なときは事前学習を使えません"
+            "（固定順一般解が投票の途中経過を扱わないため）。"
+            "pretrain を false にしてください。"
+        )
     solver = FixedOrderSolver(env.n_agents, env.total_gems, env.L, env.excess_vote_penalty)
 
     state_dicts, stats = {}, {}

@@ -27,6 +27,43 @@ class TestDataset(unittest.TestCase):
         env_obs = env.observe(env.proposer)["observation"]
         np.testing.assert_allclose(obs, env_obs)
 
+    def test_observation_matches_env_observe_with_vote_tally(self):
+        """observe_vote_tally を有効にしても env.observe() と一致する。
+
+        観測の組み立てが env.observe() と _build_observation() の2箇所に
+        重複しているため、片方だけ更新すると学習時に次元不一致で落ちる
+        （第10ラウンド 試行43 で実際に発生）。両方を突き合わせて守る。
+        """
+        config = dict(CONFIG, observe_vote_tally=True)
+        env = PirateGemEnv(config)
+        env.reset(seed=0)
+        proposer_idx = env.agent_name_mapping[env.proposer]
+
+        obs = _build_observation(env, frozenset(range(3)), proposer_idx, (0, 0, 0))
+        env_obs = env.observe(env.proposer)["observation"]
+        self.assertEqual(obs.shape, env_obs.shape)
+        np.testing.assert_allclose(obs, env_obs)
+
+    def test_observation_dim_matches_observation_space(self):
+        """既定・票数入りの両方で、観測次元が observation_space と一致する。"""
+        for observe_vote_tally in (False, True):
+            with self.subTest(observe_vote_tally=observe_vote_tally):
+                env = PirateGemEnv(dict(CONFIG, observe_vote_tally=observe_vote_tally))
+                env.reset(seed=0)
+                expected = env.observation_space("agent_A")["observation"].shape
+                obs = _build_observation(env, frozenset(range(3)), 0, (0, 0, 0))
+                self.assertEqual(obs.shape, expected)
+
+    def test_build_observation_rejects_wrong_tally_length(self):
+        env = PirateGemEnv(dict(CONFIG, observe_vote_tally=True))
+        with self.assertRaises(ValueError):
+            _build_observation(env, frozenset(range(3)), 0, (0, 0, 0), vote_tally=[1.0])
+
+    def test_pretrain_rejects_vote_tally_observation(self):
+        """一般解が投票の途中経過を扱えないので、事前学習は明示的に落とす。"""
+        with self.assertRaises(ValueError):
+            pretrain_agents(dict(CONFIG, observe_vote_tally=True), epochs=1, verbose=False)
+
     def test_dataset_targets_match_solver(self):
         env = PirateGemEnv(CONFIG)
         solver = FixedOrderSolver(3, 4, 5.0)

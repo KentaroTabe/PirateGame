@@ -76,6 +76,29 @@ def main(out_dir):
     )
     assert scratch_stats["n_episodes"] == 20
 
+    # 観測次元を変える設定は、学習が長時間走ったあとの方策指標の記録で
+    # 落ちうる（第10ラウンド 試行43）。パイプライン全体を短縮版で通しておく。
+    print("\n=== フェーズ4: 投票順と観測を変えた経路 ===")
+    variant_config = dict(
+        config,
+        excess_vote_penalty=1.0,
+        proposer_votes_last=True,
+        observe_vote_tally=True,
+    )
+    variant_result, variant_manager = train_agent(
+        args=args, config=variant_config,
+        model_path=os.path.join(out_dir, "policy_variant_smoke.pth"),
+        pretrained_state_dicts=None,
+        metrics_path=os.path.join(out_dir, "log_metrics_variant_smoke.csv"),
+        metrics_interval=1, metrics_episodes=10,
+        show_progress=False, verbose=False,
+    )
+    variant_stats = evaluate(
+        policy_manager=variant_manager, config=variant_config,
+        n_episodes=20, verbose_episodes=1,
+    )
+    assert variant_stats["n_episodes"] == 20
+
     print("\n✅ スモークテスト完了")
 
 
