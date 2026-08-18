@@ -202,7 +202,9 @@ def train_agent(args=None, config=None, model_path='policy.pth',
     test_envs.close()
 
     print("\nTraining finished!")
-    torch.save(policy_manager.state_dict(), model_path)
+    # MultiAgentPolicyManager.policies は素の dict で nn.ModuleDict ではないため、
+    # manager.state_dict() は空を返す。エージェントごとに明示的に保存する。
+    torch.save({agent: policies[agent].state_dict() for agent in agents}, model_path)
     print(f"モデルを '{model_path}' に保存しました。")
 
     return result, policy_manager

@@ -56,7 +56,29 @@ def load_policy_manager(config, model_path):
     manager = MultiAgentPolicyManager(
         policies=[policies[agent] for agent in raw_env.possible_agents], env=env,
     )
-    manager.load_state_dict(torch.load(model_path, map_location='cpu'))
+
+    # MultiAgentPolicyManager.state_dict() は空を返すため、保存はエージェント別の
+    # {agent名: state_dict} 形式で行っている（train.py 参照）。
+    saved = torch.load(model_path, map_location='cpu')
+    if not saved:
+        raise ValueError(
+            f'{model_path} に重みが入っていません。'
+            'manager.state_dict() が空を返していた時期に保存されたモデルです。'
+            '学習し直してください。'
+        )
+    missing = [a for a in raw_env.possible_agents if a not in saved]
+    if missing:
+        raise ValueError(f'{model_path} にエージェント {missing} の重みがありません。')
+    for agent in raw_env.possible_agents:
+        # 保存側は target_update_freq>0 で学習しているため model_old（ターゲット
+        # ネットワーク）のキーを含む。行動を決めるのは model なのでそこだけ復元する。
+        weights = {
+            k[len("model."):]: v
+            for k, v in saved[agent].items() if k.startswith("model.")
+        }
+        if not weights:
+            raise ValueError(f"{model_path} の {agent} に model.* の重みがありません。")
+        policies[agent].model.load_state_dict(weights)
     return manager
 
 
