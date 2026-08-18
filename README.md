@@ -55,6 +55,7 @@ AIエージェントが、自律的に「政治的駆け引き」や「強者の
 - **行動マスク付き Double DQN**: ルール違反の行動（死者への分配、フェーズ外の行動）の
   Q 値を $-10^9$ に固定し、有効な行動のみを探索
 - **入力（状態）**: 「生存フラグ」「権力ウェイト」「現在の提案者（One-hot）」「現在の分配案」の $4N$ 次元
+  （`observe_vote_tally` を有効にすると「これまでの賛成数」「投票済み人数」が加わり $4N+2$ 次元）
 - **ネットワーク**: 隠れ層 `[128, 128]` の MLP
 - **MultiAgentPolicyManager + SubprocVectorEnv**: 独立ポリシーの統括とマルチプロセス並列学習
 
@@ -149,7 +150,8 @@ scripts/run_experiment.sh
 
 - **`result/result_n.txt`**: 環境設定・一般解一致率・評価統計をまとめたサマリー
 - **`models/pretrained_n.pth`**: 一般解を埋め込んだ事前学習済みネットワーク
-- **`models/policy_n.pth`**: DQN 学習後のネットワーク（統合モデルファイル）
+- **`models/policy_n.pth`**: DQN 学習後のネットワーク（`{エージェント名: state_dict}` 形式）。
+  `scripts/reevaluate.sh <設定> <モデル> [ログ] [エピソード数] [詳細数]` で学習をやり直さずに再評価できる
 - **`log/log_pretrain_n.txt`**: 事前学習のログ（一般解一致率など）
 - **`log/log_learning_n.txt`**: エポックごとの学習ログ
 - **`log/log_metrics_n.csv`**: 学習中に定期記録した政治的指標
@@ -199,6 +201,7 @@ python export_onnx.py
 | 第8 | 方策指標による L 曲線の完成（試行33〜36） | [`docs/reports/round8.md`](docs/reports/round8.md) |
 | 第9 | 過剰賛成票ペナルティの検証（試行37〜40） | [`docs/reports/round9.md`](docs/reports/round9.md) |
 | 第10 | 自己反対が現れない理由の切り分け（試行41〜45） | [`docs/reports/round10.md`](docs/reports/round10.md) |
+| 第11 | 自己反対を生む条件の切り分け（試行46〜48） | [`docs/reports/round11.md`](docs/reports/round11.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。
