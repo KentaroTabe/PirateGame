@@ -202,6 +202,7 @@ python export_onnx.py
 | 第9 | 過剰賛成票ペナルティの検証（試行37〜40） | [`docs/reports/round9.md`](docs/reports/round9.md) |
 | 第10 | 自己反対が現れない理由の切り分け（試行41〜45） | [`docs/reports/round10.md`](docs/reports/round10.md) |
 | 第11 | 自己反対を生む条件の切り分け（試行46〜48） | [`docs/reports/round11.md`](docs/reports/round11.md) |
+| 第12 | L と権力集中度の単独効果（試行49〜52） | [`docs/reports/round12.md`](docs/reports/round12.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。
