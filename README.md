@@ -204,6 +204,7 @@ python export_onnx.py
 | 第11 | 自己反対を生む条件の切り分け（試行46〜48） | [`docs/reports/round11.md`](docs/reports/round11.md) |
 | 第12 | L と権力集中度の単独効果（試行49〜52） | [`docs/reports/round12.md`](docs/reports/round12.md) |
 | 第13 | 自己反対率の再現性検証（試行53〜54） | [`docs/reports/round13.md`](docs/reports/round13.md) |
+| 第14 | 解の分岐頻度の測定（試行55〜58） | [`docs/reports/round14.md`](docs/reports/round14.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。
