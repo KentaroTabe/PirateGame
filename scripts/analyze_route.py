@@ -6,10 +6,13 @@
    投じる票。no = 自己反対する構え / yes = 賛成する構え。
    ただしこれは**反実仮想の局面**であり、提案の作り方によっては一度も訪れない。
 
-2. **実際に実現するルート**（`prop_*` 列の買収人数）: 提案者が
-   必要票 −1 人しか買収しなければ自分が決定票になり、投票側の傾向が no でも
-   自己反対する機会がない（決定票ルート）。必要票と同数を買収して初めて
-   自己反対が実現する（自己反対ルート）。
+2. **提案の買収人数**（`prop_*` 列）: 提案者が何人に宝石を配ったか。
+
+**注意: 買収人数から実現するルートは判定できない**（第15ラウンド 試行60 で判明）。
+宝石をもらっても反対する者、もらわなくても賛成する者がいるため、
+「他者だけで必要票が揃うか」は買収人数では決まらない。
+実現するルートを知るには評価ログの実際の投票を見る必要がある
+（`scripts/analyze_selfvote.py`）。
 
 使い方: python scripts/analyze_route.py log/log_metrics_59.csv [エージェント記号]
 """
@@ -60,20 +63,14 @@ def main(path, agent="A"):
         print(f"{col} 列がありません（{path}）")
         return 1
 
-    # 実際に実現するルート（買収人数から判定）
     n_agents = sum(1 for k in rows[0] if k.startswith("prop_"))
     required = (n_agents + 1) // 2
+    # 買収人数の推移（ルートの判定には使えない。上の注意を参照）
     route = []
     for r in rows:
         b = buy_count(r[prop_col], idx)
-        if b is None:
-            continue
-        if b >= required:
-            route.append((int(r["epoch"]), "自己反対"))
-        elif b == required - 1:
-            route.append((int(r["epoch"]), "決定票"))
-        else:
-            route.append((int(r["epoch"]), f"その他({b}人買収)"))
+        if b is not None:
+            route.append((int(r["epoch"]), f"{b}人買収"))
 
     series = [(int(r["epoch"]), r[col]) for r in rows if r[col] in ("yes", "no")]
     if not series:
@@ -88,7 +85,7 @@ def main(path, agent="A"):
 
     summarize_switches(series, f"投票側の傾向（{col}）")
     if route:
-        summarize_switches(route, f"実際に実現するルート（{prop_col} の買収人数）")
+        summarize_switches(route, f"提案の買収人数（{prop_col}）")
     return 0
 
 
