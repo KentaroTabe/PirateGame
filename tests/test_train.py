@@ -7,7 +7,8 @@
 
 import unittest
 
-from train import build_policy_manager, get_env, get_args, record_proposals
+from train import (build_policy_manager, get_env, get_args, record_proposals,
+                   record_proposer_votes)
 
 BASE_CONFIG = {
     "num_agents": 3,
@@ -48,6 +49,64 @@ class TestRecordProposals(unittest.TestCase):
         proposals, env = self._run(proposer_votes_last=True, observe_vote_tally=True)
         self.assertEqual(len(proposals), env.n_agents)
         self.assertNotIn("invalid", proposals)
+
+
+class TestRecordProposerVotes(unittest.TestCase):
+    """自己反対ルートか決定票ルートかの読み出し。"""
+
+    def _votes(self, **overrides):
+        config = dict(BASE_CONFIG, **overrides)
+        env = get_env(config)
+        args = get_args()
+        args.device = "cpu"
+        _, policies = build_policy_manager(env, args)
+        agents = env.env.possible_agents
+        return record_proposer_votes(policies, env.env, agents), env.env
+
+    def test_returns_na_without_vote_tally_observation(self):
+        """票数が観測に入らない設定では読み出せないので n/a を返す。"""
+        votes, env = self._votes(observe_vote_tally=False)
+        self.assertEqual(votes, ["n/a"] * env.n_agents)
+
+    def test_returns_a_binary_vote_per_agent(self):
+        votes, env = self._votes(observe_vote_tally=True)
+        self.assertEqual(len(votes), env.n_agents)
+        for v in votes:
+            self.assertIn(v, ("yes", "no"))
+
+    def test_works_with_proposer_votes_last(self):
+        votes, env = self._votes(observe_vote_tally=True, proposer_votes_last=True)
+        self.assertEqual(len(votes), env.n_agents)
+        for v in votes:
+            self.assertIn(v, ("yes", "no"))
+
+    def test_reads_the_policy_not_a_constant(self):
+        """異なる重みの方策からは、同じ値が返るとは限らない形で読めている。
+
+        （毎回同じ定数を返す実装になっていないことを、観測が実際に
+        ネットワークを通っていることで担保する。）
+        """
+        import torch
+
+        config = dict(BASE_CONFIG, observe_vote_tally=True)
+        env = get_env(config)
+        args = get_args()
+        args.device = "cpu"
+        _, policies = build_policy_manager(env, args)
+        agents = env.env.possible_agents
+
+        first = record_proposer_votes(policies, env.env, agents)
+
+        # 最終層のバイアスを操作して NO を強制し、読み出しが追従することを見る
+        for a in agents:
+            last = [m for m in policies[a].model.model if isinstance(m, torch.nn.Linear)][-1]
+            with torch.no_grad():
+                last.bias[env.env.ACTION_NO] = 1e6
+                last.bias[env.env.ACTION_YES] = -1e6
+        forced = record_proposer_votes(policies, env.env, agents)
+
+        self.assertEqual(forced, ["no"] * env.env.n_agents)
+        self.assertEqual(len(first), env.env.n_agents)
 
 
 class TestModelRoundTrip(unittest.TestCase):

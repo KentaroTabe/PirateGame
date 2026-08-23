@@ -155,7 +155,8 @@ scripts/run_experiment.sh
 - **`log/log_pretrain_n.txt`**: 事前学習のログ（一般解一致率など）
 - **`log/log_learning_n.txt`**: エポックごとの学習ログ
 - **`log/log_metrics_n.csv`**: 学習中に定期記録した政治的指標
-  （エージェント別平均報酬・死亡率・一発可決率・平均エピソード長）
+  （エージェント別平均報酬・死亡率・一発可決率・平均エピソード長・
+  各エージェントの提案 `prop_*`・罰の回避ルート `selfvote_*`）
 - **`files/plots/log_metrics_n.png`**: 上記メトリクスの学習曲線グラフ
   （実験終了時に自動生成。全体/宝石レンジ拡大の報酬推移・死亡率・
   一発可決率・エピソード長・最終盤の平均取り分）
@@ -205,6 +206,7 @@ python export_onnx.py
 | 第12 | L と権力集中度の単独効果（試行49〜52） | [`docs/reports/round12.md`](docs/reports/round12.md) |
 | 第13 | 自己反対率の再現性検証（試行53〜54） | [`docs/reports/round13.md`](docs/reports/round13.md) |
 | 第14 | 解の分岐頻度の測定（試行55〜58） | [`docs/reports/round14.md`](docs/reports/round14.md) |
+| 第15 | ルートが決まる時点の観測（試行59〜62） | [`docs/reports/round15.md`](docs/reports/round15.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。

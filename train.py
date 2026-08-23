@@ -99,6 +99,52 @@ def record_proposals(policies, env, agents):
     return proposals
 
 
+def record_proposer_votes(policies, env, agents):
+    """各エージェントが「必要票がすでに他者だけで揃っている」局面で投じる票を返す。
+
+    自己反対ルート（自分は反対に回って超過票を減らす）と決定票ルート
+    （自分の賛成でちょうど必要票を満たす）のどちらに落ちたかを、
+    方策から直接読み出す指標（docs/reports/round14.md 参照）。
+
+    この局面では反対が得（可決は保たれたまま罰が1つ減る）なので、
+    "no" なら自己反対ルート、"yes" なら決定票ルートにあたる。
+
+    observe_vote_tally が無効な場合、投票の途中経過が観測に入らないため
+    この読み出しは意味を持たない。"n/a" を返す。
+    """
+    from pretrain import _build_observation
+
+    if not env.observe_vote_tally:
+        return ["n/a"] * len(agents)
+
+    alive = set(range(env.n_agents))
+    n_dist = len(env.DISTRIBUTIONS)
+    required = int(np.ceil(env.n_agents / 2))
+    # 提案者以外の全員が投票済みで、うち必要数がすでに賛成している状況
+    tally = [float(required), float(env.n_agents - 1)]
+
+    votes = []
+    for idx, agent in enumerate(agents):
+        # その提案者が実際に選ぶ分配案の下で判定する
+        propose_mask = np.zeros(n_dist + 2, dtype=bool)
+        propose_mask[:n_dist] = True
+        propose_obs = _build_observation(env, alive, idx, (0,) * env.n_agents)
+        batch = Batch(obs=Batch(obs=propose_obs[None, :], mask=propose_mask[None, :]), info={})
+        with torch.no_grad():
+            action = int(policies[agent](batch).act[0])
+        proposal = env.DISTRIBUTIONS[action] if action < n_dist else (0,) * env.n_agents
+
+        vote_mask = np.zeros(n_dist + 2, dtype=bool)
+        vote_mask[env.ACTION_YES] = True
+        vote_mask[env.ACTION_NO] = True
+        vote_obs = _build_observation(env, alive, idx, proposal, vote_tally=tally)
+        batch = Batch(obs=Batch(obs=vote_obs[None, :], mask=vote_mask[None, :]), info={})
+        with torch.no_grad():
+            vote = int(policies[agent](batch).act[0])
+        votes.append("no" if vote == env.ACTION_NO else "yes")
+    return votes
+
+
 def collect_political_metrics(policy_manager, policies, test_collector, agents, n_episode):
     """貪欲方策（ε=0）で評価対局を行い、政治的指標を集計する。
 
@@ -180,6 +226,7 @@ def train_agent(args=None, config=None, model_path='policy.pth',
                 ["epoch", "env_step", "len_mean", "first_pass_rate"]
                 + [f"rew_{x}" for x in names] + [f"death_{x}" for x in names]
                 + [f"prop_{x}" for x in names]
+                + [f"selfvote_{x}" for x in names]
             )
             mf.write(",".join(header) + "\n")
             for epoch, epoch_stat, info in trainer:
@@ -192,6 +239,7 @@ def train_agent(args=None, config=None, model_path='policy.pth',
                         [epoch, epoch_stat["env_step"], m["len_mean"], m["first_pass_rate"]]
                         + list(m["rew_mean"]) + list(m["death_rate"])
                         + record_proposals(policies, env.env, agents)
+                        + record_proposer_votes(policies, env.env, agents)
                     )
                     mf.write(",".join(
                         f"{v:.4f}" if isinstance(v, float) else str(v) for v in row
