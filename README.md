@@ -207,6 +207,7 @@ python export_onnx.py
 | 第13 | 自己反対率の再現性検証（試行53〜54） | [`docs/reports/round13.md`](docs/reports/round13.md) |
 | 第14 | 解の分岐頻度の測定（試行55〜58） | [`docs/reports/round14.md`](docs/reports/round14.md) |
 | 第15 | ルートが決まる時点の観測（試行59〜62） | [`docs/reports/round15.md`](docs/reports/round15.md) |
+| 第16 | L の絶対値か L/宝石数の比か（試行63〜66） | [`docs/reports/round16.md`](docs/reports/round16.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。
