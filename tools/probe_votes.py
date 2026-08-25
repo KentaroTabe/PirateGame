@@ -118,6 +118,11 @@ def probe_tally(config, model_path, proposer="A"):
             sensitive.append(agent[-1])
 
     print()
+    if not env.observe_vote_tally:
+        print("（この設定は observe_vote_tally が無効で、票の途中経過が観測に"
+              "入っていない。上の表がすべて同じなのは当然であり、"
+              "『反応しない』という測定結果ではない。）")
+        return sensitive
     print(f"票の途中経過に反応する投票者: {len(sensitive)}/{env.n_agents - 1}"
           + (f" — {', '.join(sensitive)}" if sensitive else ""))
     return sensitive
