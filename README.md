@@ -209,6 +209,7 @@ python export_onnx.py
 | 第15 | ルートが決まる時点の観測（試行59〜62） | [`docs/reports/round15.md`](docs/reports/round15.md) |
 | 第16 | L の絶対値か L/宝石数の比か（試行63〜66） | [`docs/reports/round16.md`](docs/reports/round16.md) |
 | 第17 | 機構は主要な実験群にも当てはまるか（試行67〜70） | [`docs/reports/round17.md`](docs/reports/round17.md) |
+| 第18 | 票数観測と罰のどちらが効いたのか（試行71〜74） | [`docs/reports/round18.md`](docs/reports/round18.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。
