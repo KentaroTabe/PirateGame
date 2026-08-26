@@ -135,6 +135,9 @@ pip install -r requirements.txt
   提案者が他者の票を見てから自分の票を決められるようになる
 - `observe_vote_tally`: `true` で観測の末尾に `[これまでの賛成数, 投票済み人数]` を足す
   （既定 `false`、観測が 4N → 4N+2 次元になる）
+- `observe_noise_dims`: 観測の末尾に足す**無意味な乱数**の次元数（既定 `0`）。
+  `observe_vote_tally` の効果が「予測力のある特徴だから」なのか
+  「次元が増えたから」なのかを切り分けるための対照
 - `pretrain` / `pretrain_epochs`: 固定順一般解の事前学習の有効化と回帰エポック数
 - `eval_episodes` / `eval_verbose_episodes`: 評価エピソード数と詳細ログを出すエピソード数
 
@@ -210,6 +213,7 @@ python export_onnx.py
 | 第16 | L の絶対値か L/宝石数の比か（試行63〜66） | [`docs/reports/round16.md`](docs/reports/round16.md) |
 | 第17 | 機構は主要な実験群にも当てはまるか（試行67〜70） | [`docs/reports/round17.md`](docs/reports/round17.md) |
 | 第18 | 票数観測と罰のどちらが効いたのか（試行71〜74） | [`docs/reports/round18.md`](docs/reports/round18.md) |
+| 第19 | 票数観測が効くのは情報か次元数か（試行75〜78） | [`docs/reports/round19.md`](docs/reports/round19.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。

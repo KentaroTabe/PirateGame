@@ -54,6 +54,12 @@ class PirateGemEnv(AECEnv):
         self.proposer_votes_last = config.get("proposer_votes_last", False)
         # 観測に投票の途中経過（これまでの賛成数・投票済み人数）を含めるか。
         self.observe_vote_tally = config.get("observe_vote_tally", False)
+        # 観測の末尾に足す無意味な乱数の次元数。observe_vote_tally の効果が
+        # 「予測力のある特徴だから」なのか「次元が増えたから」なのかを
+        # 切り分けるための対照（docs/reports/round19.md 参照）。
+        self.observe_noise_dims = int(config.get("observe_noise_dims", 0))
+        if self.observe_noise_dims < 0:
+            raise ValueError("observe_noise_dims は0以上で指定してください")
 
         self.possible_agents = [f"agent_{chr(65 + i)}" for i in range(self.n_agents)]
         self.agent_name_mapping = dict(zip(self.possible_agents, range(self.n_agents)))
@@ -80,6 +86,7 @@ class PirateGemEnv(AECEnv):
         obs_dim = 4 * self.n_agents
         if self.observe_vote_tally:
             obs_dim += self.VOTE_TALLY_DIM
+        obs_dim += self.observe_noise_dims
         obs_high = float(max(100, self.total_gems))
         self.observation_spaces = {
             agent: Dict({
@@ -89,6 +96,9 @@ class PirateGemEnv(AECEnv):
         }
 
         self._rng = np.random.default_rng()
+        # 乱数次元は専用の RNG から引く。self._rng を進めると提案者の選出が
+        # ずれてしまい、乱数次元なしの実験と比較できなくなるため。
+        self._noise_rng = np.random.default_rng()
         self.event_log = []
 
     def observation_space(self, agent):
@@ -103,6 +113,7 @@ class PirateGemEnv(AECEnv):
     def reset(self, seed=None, options=None):
         if seed is not None:
             self._rng = np.random.default_rng(seed)
+            self._noise_rng = np.random.default_rng(seed + 1)
 
         self.agents = self.possible_agents[:]
         self.terminations = {agent: False for agent in self.possible_agents}
@@ -130,6 +141,10 @@ class PirateGemEnv(AECEnv):
         features = alive_flag + weights + proposer_onehot + proposal
         if self.observe_vote_tally:
             features = features + self._vote_tally()
+        if self.observe_noise_dims:
+            features = features + list(
+                self._noise_rng.random(self.observe_noise_dims).astype(float)
+            )
 
         obs = np.array(features, dtype=np.float32)
 

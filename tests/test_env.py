@@ -208,6 +208,50 @@ class TestPirateGemEnv(unittest.TestCase):
         self._vote(env, False)  # B → 賛成1・投票2
         self.assertEqual(list(env.observe("agent_C")["observation"][-2:]), [1.0, 2.0])
 
+    # ------------------------------------------------------------------
+    # observe_noise_dims（既定は 0 = 乱数次元なし）
+    # ------------------------------------------------------------------
+    def test_observation_has_no_noise_dims_by_default(self):
+        env = make_env()
+        env.reset(seed=0)
+        self.assertEqual(env.observe_noise_dims, 0)
+        self.assertEqual(env.observe(env.proposer)["observation"].shape,
+                         (4 * env.n_agents,))
+
+    def test_noise_dims_extend_the_observation(self):
+        env = make_env(observe_noise_dims=3)
+        env.reset(seed=0)
+        expected = (4 * env.n_agents + 3,)
+        self.assertEqual(env.observation_space("agent_A")["observation"].shape, expected)
+        self.assertEqual(env.observe("agent_A")["observation"].shape, expected)
+
+    def test_noise_dims_change_between_observations(self):
+        """乱数次元は毎回引き直される（定数ではない）。"""
+        env = make_env(observe_noise_dims=4)
+        env.reset(seed=0)
+        first = env.observe("agent_A")["observation"][-4:]
+        second = env.observe("agent_A")["observation"][-4:]
+        self.assertFalse((first == second).all(), "乱数次元が変化していない")
+
+    def test_noise_dims_do_not_disturb_proposer_selection(self):
+        """乱数次元は専用 RNG から引くので、提案者の並びを変えない。
+
+        self._rng を進めてしまうと、乱数次元なしの実験と比較できなくなる。
+        """
+        plain = make_env(fixed_order=False)
+        noisy = make_env(fixed_order=False, observe_noise_dims=4)
+        for seed in range(20):
+            plain.reset(seed=seed)
+            noisy.reset(seed=seed)
+            # 観測を引いて乱数 RNG を進めても提案者は一致する
+            noisy.observe("agent_A")
+            noisy.observe("agent_B")
+            self.assertEqual(plain.proposer, noisy.proposer, f"seed={seed} で提案者がずれた")
+
+    def test_negative_noise_dims_rejected(self):
+        with self.assertRaises(ValueError):
+            make_env(observe_noise_dims=-1)
+
     def test_vote_tally_resets_for_the_next_proposal(self):
         env = make_env(observe_vote_tally=True)
         env.reset(seed=0)

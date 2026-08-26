@@ -38,6 +38,11 @@ def _build_observation(env, alive_set, proposer, proposal, vote_tally=None):
             )
         features = features + tally
 
+    # 乱数次元は無意味な入力なので、読み出し時は 0 で埋める
+    # （env.observe() では実際の乱数が入る）。
+    if env.observe_noise_dims:
+        features = features + [0.0] * env.observe_noise_dims
+
     return np.array(features, dtype=np.float32)
 
 
@@ -153,6 +158,11 @@ def pretrain_agents(config, device="cpu", hidden_sizes=(128, 128),
             "observe_vote_tally が有効なときは事前学習を使えません"
             "（固定順一般解が投票の途中経過を扱わないため）。"
             "pretrain を false にしてください。"
+        )
+    if env.observe_noise_dims:
+        raise ValueError(
+            "observe_noise_dims が有効なときは事前学習を使えません"
+            "（一般解は乱数次元を扱わないため）。pretrain を false にしてください。"
         )
     solver = FixedOrderSolver(env.n_agents, env.total_gems, env.L, env.excess_vote_penalty)
 

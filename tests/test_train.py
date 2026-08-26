@@ -50,6 +50,21 @@ class TestRecordProposals(unittest.TestCase):
         self.assertEqual(len(proposals), env.n_agents)
         self.assertNotIn("invalid", proposals)
 
+    def test_works_with_noise_dims(self):
+        """乱数次元を足しても観測次元が合い、学習中に落ちない。
+
+        第10ラウンド 試行43 と同じ種類の不整合（観測の組み立てが2箇所に
+        重複している）を、新しい設定でも起こさないことを守る。
+        """
+        proposals, env = self._run(observe_noise_dims=4)
+        self.assertEqual(len(proposals), env.n_agents)
+        self.assertNotIn("invalid", proposals)
+
+    def test_works_with_noise_dims_and_tally(self):
+        proposals, env = self._run(observe_noise_dims=4, observe_vote_tally=True)
+        self.assertEqual(len(proposals), env.n_agents)
+        self.assertNotIn("invalid", proposals)
+
 
 class TestRecordProposerVotes(unittest.TestCase):
     """自己反対ルートか決定票ルートかの読み出し。"""
