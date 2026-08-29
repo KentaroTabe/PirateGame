@@ -217,6 +217,7 @@ python export_onnx.py
 | 第20 | 票数観測は独裁者を富ませるか（試行79〜82） | [`docs/reports/round20.md`](docs/reports/round20.md) |
 | 第21 | 比の結論を n=4 で確認する（試行83〜86） | [`docs/reports/round21.md`](docs/reports/round21.md) |
 | 第22 | 乱数セルの n=4 化と測定指標の刷新（試行87〜90） | [`docs/reports/round22.md`](docs/reports/round22.md) |
+| 第23 | L=5 で票数観測の効果を判定する（試行91〜96） | [`docs/reports/round23.md`](docs/reports/round23.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。
