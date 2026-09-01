@@ -220,6 +220,7 @@ python export_onnx.py
 | 第23 | L=5 で票数観測の効果を判定する（試行91〜96） | [`docs/reports/round23.md`](docs/reports/round23.md) |
 | 第24 | 票数観測の効果を n=8 で決着させる（試行97〜104） | [`docs/reports/round24.md`](docs/reports/round24.md) |
 | 第25 | 比か絶対値かを非飽和域で決着させる（試行105〜111） | [`docs/reports/round25.md`](docs/reports/round25.md) |
+| 第26 | エージェント数を6未満から測る（試行112〜123） | [`docs/reports/round26.md`](docs/reports/round26.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。
