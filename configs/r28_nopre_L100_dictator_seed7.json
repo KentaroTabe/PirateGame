@@ -1,0 +1,21 @@
+{
+    "num_agents": 6,
+    "total_gems": 5,
+    "L": 100,
+    "agent_weights": [
+        50.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+    ],
+    "train_epochs": 7000,
+    "fixed_order": false,
+    "excess_vote_penalty": 0.0,
+    "pretrain_epochs": 200,
+    "eval_episodes": 100,
+    "eval_verbose_episodes": 3,
+    "pretrain": false,
+    "seed": 7
+}
