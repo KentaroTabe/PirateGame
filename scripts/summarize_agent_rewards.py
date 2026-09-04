@@ -39,16 +39,22 @@ def main():
     args = ap.parse_args()
 
     print(f"{'試行':>5} " + " ".join(f"{a:>8}" for a in AGENTS)
-          + f" {'記録点':>6} {'首位':>4}")
+          + f" {'A優位度':>8} {'A順位':>5} {'首位':>4}")
     for n in args.trials:
         res = summarize(n)
         if res is None:
             print(f"{n:>5} （記録なし）")
             continue
-        means, points = res
+        means, _ = res
         top = max(means, key=lambda a: means[a])
+        # A の優位度 = A の全期間平均 - 他の全エージェントの平均。
+        # 「A が首位か」という離散的な読みでは 6 段階しか解像度がないため、
+        # 連続量にして n=4 でも比較できるようにする（第22ラウンドの教訓）。
+        others = [means[a] for a in AGENTS if a != "A" and a in means]
+        edge = means["A"] - sum(others) / len(others)
+        rank = sorted(AGENTS, key=lambda a: -means[a]).index("A") + 1
         print(f"{n:>5} " + " ".join(f"{means[a]:>+8.3f}" for a in AGENTS)
-              + f" {points:>6} {top:>4}")
+              + f" {edge:>+8.3f} {rank:>5} {top:>4}")
     return 0
 
 
