@@ -31,8 +31,21 @@ from eval import load_policy_manager
 from pretrain import _build_observation
 
 
-def measure(config, model_path, proposer="A"):
-    """感応度と、比較に使った局面数を返す。"""
+def measure(config, model_path, proposer="A", proposer_filter=None, rich_spread=False):
+    """感応度と、比較に使った局面数を返す。
+
+    proposer_filter に「提案者インデックス -> bool」を渡すと、
+    走査する提案者をその部分集合に絞る。走査は決定的なので、
+    互いに素な2つの部分集合で測れば**同一モデルに対する2つの独立な推定**が得られる
+    （測定のばらつきとシード間のばらつきを切り分けるために使う。
+    docs/methodology.md「感応度のばらつきの出どころ」を参照）。
+    既定の None では全提案者を走査し、従来と同じ値を返す。
+
+    rich_spread=True にすると、残りの宝石の配り方を
+    「提案者が独占」「他者に均等」の2通りから
+    「他者1人が総取り」の各パターンを加えたものに広げ、走査局面数を増やす。
+    測定の精度を上げたいときに使う。**既定は False**（過去の全測定と同じ値を返す）。
+    """
     env = PirateGemEnv(config)
     manager = load_policy_manager(config, model_path)
     policies = manager.policies
@@ -62,17 +75,28 @@ def measure(config, model_path, proposer="A"):
             return int(policies[agent](batch).act[0]) == env.ACTION_YES
 
     def build(v_idx, prop_idx, v_gems, spread):
-        """投票者に v_gems を渡し、残りを提案者が独占するか他者に散らすか。"""
+        """投票者に v_gems を渡し、残りを spread の指定どおりに配る。
+
+        spread が False なら提案者が独占、True なら他者に均等。
+        整数（0 以上）なら「他者のうち spread 番目が総取り」。
+        """
         dist = [0] * env.n_agents
         dist[v_idx] = v_gems
         rest = env.total_gems - v_gems
-        if not spread:
+        others = [i for i in range(env.n_agents) if i not in (v_idx, prop_idx)]
+        if spread is False:
             dist[prop_idx] += rest
             return dist
-        others = [i for i in range(env.n_agents) if i not in (v_idx, prop_idx)]
-        for k in range(rest):
-            dist[others[k % len(others)]] += 1
+        if spread is True:
+            for k in range(rest):
+                dist[others[k % len(others)]] += 1
+            return dist
+        dist[others[spread % len(others)]] += rest
         return dist
+
+    spreads = [False, True]
+    if rich_spread:
+        spreads += list(range(max(env.n_agents - 2, 1)))
 
     to_yes = 0
     to_no = 0
@@ -85,7 +109,9 @@ def measure(config, model_path, proposer="A"):
         for prop_idx in range(env.n_agents):
             if prop_idx == v_idx:
                 continue
-            for spread in (False, True):
+            if proposer_filter is not None and not proposer_filter(prop_idx):
+                continue
+            for spread in spreads:
                 for tally in tallies:
                     for gems in range(env.total_gems):
                         low = build(v_idx, prop_idx, gems, spread)

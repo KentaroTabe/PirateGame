@@ -266,5 +266,49 @@ class TestPirateGemEnv(unittest.TestCase):
         self.assertEqual(list(env.observe("agent_B")["observation"][-2:]), [0.0, 0.0])
 
 
+class TestSensitivityProposerFilter(unittest.TestCase):
+    """提案者フィルタは走査を分割するだけで、全体の比較数を保つ。
+
+    偶数側と奇数側の比較数の和がフィルタなしの比較数に一致しなければ、
+    半分ずつの測定を「同一モデルに対する2つの推定」として扱えなくなり、
+    tools/sensitivity_split.py の切り分けが成り立たない。
+    """
+
+    def test_even_and_odd_halves_partition_the_scan(self):
+        import tempfile
+
+        import torch
+
+        from tools.vote_sensitivity import measure
+        from train import build_policy_manager, get_args, get_env
+
+        config = {
+            "num_agents": 4,
+            "total_gems": 3,
+            "L": 5.0,
+            "agent_weights": [3.0, 2.0, 1.0, 1.0],
+            "fixed_order": False,
+        }
+        env = get_env(config)
+        args = get_args()
+        args.device = "cpu"
+        _, policies = build_policy_manager(env, args)
+        agents = env.env.possible_agents
+
+        with tempfile.TemporaryDirectory() as d:
+            path = f"{d}/policy.pth"
+            torch.save({a: policies[a].state_dict() for a in agents}, path)
+
+            whole = measure(config, path)
+            even = measure(config, path, proposer_filter=lambda i: i % 2 == 0)
+            odd = measure(config, path, proposer_filter=lambda i: i % 2 == 1)
+
+        self.assertGreater(even["n_comparisons"], 0)
+        self.assertGreater(odd["n_comparisons"], 0)
+        self.assertEqual(even["n_comparisons"] + odd["n_comparisons"],
+                         whole["n_comparisons"])
+
+
 if __name__ == '__main__':
     unittest.main()
+
