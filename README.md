@@ -230,6 +230,7 @@ python export_onnx.py
 | 第28 | 事前学習ありのセルを再現する（試行128〜135） | [`docs/reports/round28.md`](docs/reports/round28.md) |
 | 第29 | 残っている n=1 の主張を検証する（試行136〜147） | [`docs/reports/round29.md`](docs/reports/round29.md) |
 | 第30 | 未解決の問い3つに答える（試行148〜155） | [`docs/reports/round30.md`](docs/reports/round30.md) |
+| 第31 | L=20 の谷は本物か（試行156〜159） | [`docs/reports/round31.md`](docs/reports/round31.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。
