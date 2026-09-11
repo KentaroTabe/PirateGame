@@ -1,8 +1,10 @@
-"""FixedOrderSolver（バックワードインダクション一般解）のテスト。"""
+"""FixedOrderSolver（バックワードインダクション一般解）と RandomOrderSolver のテスト。"""
 
 import unittest
 
-from solver import FixedOrderSolver
+import numpy as np
+
+from solver import FixedOrderSolver, RandomOrderSolver
 
 
 class TestClassicPirateGame(unittest.TestCase):
@@ -73,6 +75,70 @@ class TestInfeasibleProposal(unittest.TestCase):
         proposal, passes = solver.optimal_proposal(frozenset(range(6)), proposer=0)
         self.assertTrue(passes)
         self.assertTrue(solver.optimal_vote(frozenset(range(6)), 0, proposal, 1))
+
+
+class TestRandomOrderSolver(unittest.TestCase):
+    """ランダム順・否決で脱落するゲーム（学習環境そのもの）の理論均衡。
+
+    期待値は手計算で導ける小さなゲームで確かめる。
+    """
+
+    def test_two_survivors_split_by_recognition(self):
+        # 2人なら提案者自身の1票で可決するので、選ばれた方が独占する
+        solver = RandomOrderSolver(2, 5, L=10.0, weights=[3.0, 1.0])
+        value = solver.value(frozenset({0, 1}))
+        self.assertAlmostEqual(value[0], 5 * 0.75)
+        self.assertAlmostEqual(value[1], 5 * 0.25)
+
+    def test_three_agents_one_gem_proposer_keeps_nothing(self):
+        # 否決後の2人ゲームで各投票者の期待値は 0.5。真に上回るには1個要るので、
+        # 提案者は唯一の宝石を2人のどちらかに（無作為に）渡し、手元は0になる
+        solver = RandomOrderSolver(3, 1, L=10.0, weights=[1.0, 1.0, 1.0])
+        payoff, passes, yes_prob = solver.proposal_outcome(frozenset(range(3)), 0)
+        self.assertTrue(passes)
+        np.testing.assert_allclose(payoff, [0.0, 0.5, 0.5])
+        np.testing.assert_allclose(yes_prob, [0.0, 0.5, 0.5])
+        np.testing.assert_allclose(solver.value(frozenset(range(3))), [1 / 3] * 3)
+
+    def test_unaffordable_subgame_makes_L_matter(self):
+        # 4人ゲームの各自の期待値は 1/4（3人ゲームの 1/3 を 3/4 の確率で受け取る）。
+        # 5人では必要2票の買収に2個要り、宝石1個では誰も可決させられない。
+        # 各自の期待値は「1/5 で提案者になり -L」+「4/5 で残って 1/4」
+        L = 10.0
+        solver = RandomOrderSolver(5, 1, L=L, weights=[1.0] * 5)
+        _, passes, _ = solver.proposal_outcome(frozenset(range(5)), 0)
+        self.assertFalse(passes)
+        np.testing.assert_allclose(solver.value(frozenset(range(5))), [(1 - L) / 5] * 5)
+
+    def test_values_do_not_depend_on_L_when_every_subgame_passes(self):
+        # 6人・宝石5個では可決できない部分ゲームがないので、-L は均衡経路に現れない
+        full = frozenset(range(6))
+        for weights in ([1.0] * 6, [50.0, 1.0, 1.0, 1.0, 1.0, 1.0]):
+            low = RandomOrderSolver(6, 5, L=5.0, weights=weights).value(full)
+            high = RandomOrderSolver(6, 5, L=100.0, weights=weights).value(full)
+            np.testing.assert_allclose(low, high)
+            self.assertAlmostEqual(low.sum(), 5.0)
+
+    def test_symmetric_weights_give_equal_values(self):
+        value = RandomOrderSolver(6, 5, L=100.0, weights=[1.0] * 6).value(frozenset(range(6)))
+        np.testing.assert_allclose(value, [5 / 6] * 6)
+
+    def test_tie_rule_changes_the_proposer_share(self):
+        # 均等重み6人・宝石5個: 否決後の5人ゲームの各自の価値は対称性から 5/5 = 1.0 ちょうど。
+        # 無差別なら反対 → 1人2個で2票に4個、手元1。無差別なら賛成 → 1人1個で2票に2個、手元3。
+        # どちらの規則でも対称性から全員の期待価値は 5/6 のまま。
+        full = frozenset(range(6))
+        weights = [1.0] * 6
+        strict = RandomOrderSolver(6, 5, L=100.0, weights=weights)
+        lenient = RandomOrderSolver(6, 5, L=100.0, weights=weights, accept_when_indifferent=True)
+        self.assertAlmostEqual(strict.proposal_outcome(full, 0)[0][0], 1.0)
+        self.assertAlmostEqual(lenient.proposal_outcome(full, 0)[0][0], 3.0)
+        np.testing.assert_allclose(strict.value(full), [5 / 6] * 6)
+        np.testing.assert_allclose(lenient.value(full), [5 / 6] * 6)
+
+    def test_rejects_mismatched_weights(self):
+        with self.assertRaises(ValueError):
+            RandomOrderSolver(3, 5, L=10.0, weights=[1.0, 1.0])
 
 
 if __name__ == '__main__':
