@@ -266,6 +266,82 @@ class TestPirateGemEnv(unittest.TestCase):
         self.assertEqual(list(env.observe("agent_B")["observation"][-2:]), [0.0, 0.0])
 
 
+class TestEnvRules(unittest.TestCase):
+    """可決条件・罰・死者の扱いという、結果の解釈に直結するルールを固定する。"""
+
+    def _propose(self, env, dist):
+        self.assertEqual(env.phase, "PROPOSE")
+        env.step(env.DISTRIBUTIONS.index(tuple(dist)))
+
+    def _vote(self, env, yes):
+        self.assertEqual(env.phase, "VOTE")
+        env.step(env.ACTION_YES if yes else env.ACTION_NO)
+
+    def test_required_votes_follow_the_number_of_survivors(self):
+        # 5人なら必要3票、1人死んで4人になれば必要2票（ceil(生存者/2)）
+        env = make_env(num_agents=5, total_gems=5, agent_weights=[1.0] * 5, L=2.0)
+        env.reset(seed=0)
+        self._propose(env, (1, 1, 1, 1, 1))
+        self._vote(env, True)    # A
+        self._vote(env, True)    # B
+        self._vote(env, False)   # C
+        self._vote(env, False)   # D
+        self._vote(env, False)   # E → 賛成2票は5人での必要3票に届かず否決
+        self.assertFalse(env.alive["agent_A"])
+        self.assertEqual(env.rewards["agent_A"], -2.0)
+
+        # 4人になったので必要2票。B の提案は賛成2票で可決する
+        self.assertEqual(env.proposer, "agent_B")
+        self._propose(env, (0, 2, 1, 1, 1))
+        self._vote(env, True)    # B
+        self._vote(env, True)    # C
+        self._vote(env, False)   # D
+        self._vote(env, False)   # E
+        self.assertTrue(all(env.terminations.values()))
+        self.assertEqual(env.rewards["agent_B"], 2.0)
+        self.assertEqual(env.rewards["agent_C"], 1.0)
+
+    def test_excess_vote_penalty_counts_every_extra_yes(self):
+        # 5人・必要3票で全員が賛成すると超過は2票。罰0.25なら提案者は 1 - 0.5 = 0.5
+        env = make_env(num_agents=5, total_gems=5, agent_weights=[1.0] * 5,
+                       excess_vote_penalty=0.25)
+        env.reset(seed=0)
+        self._propose(env, (1, 1, 1, 1, 1))
+        for _ in range(5):
+            self._vote(env, True)
+        self.assertAlmostEqual(env.rewards["agent_A"], 0.5)
+        # 投票者の取り分は罰の影響を受けない
+        self.assertAlmostEqual(env.rewards["agent_B"], 1.0)
+
+    def test_dead_agents_cannot_receive_gems(self):
+        env = make_env()
+        env.reset(seed=0)
+        self._propose(env, (4, 0, 0))
+        self._vote(env, True)
+        self._vote(env, False)
+        self._vote(env, False)  # A が死亡
+
+        valid = env.valid_distribution_indices()
+        self.assertTrue(valid)
+        for index in valid:
+            self.assertEqual(env.DISTRIBUTIONS[index][0], 0, "死者に宝石を配る案が有効になっている")
+        # 行動マスクにも反映される
+        mask = env.observe(env.proposer)["action_mask"]
+        for index, dist in enumerate(env.DISTRIBUTIONS):
+            if dist[0] > 0:
+                self.assertEqual(mask[index], 0)
+
+    def test_last_agent_rejecting_itself_ends_the_game(self):
+        # 生存者1人なら必要1票。自分が反対すれば否決され、全滅で終了する
+        env = make_env(num_agents=1, total_gems=3, agent_weights=[1.0], L=7.0)
+        env.reset(seed=0)
+        self._propose(env, (3,))
+        self._vote(env, False)
+        self.assertFalse(env.alive["agent_A"])
+        self.assertEqual(env.rewards["agent_A"], -7.0)
+        self.assertTrue(all(env.terminations.values()))
+
+
 class TestSensitivityProposerFilter(unittest.TestCase):
     """提案者フィルタは走査を分割するだけで、全体の比較数を保つ。
 

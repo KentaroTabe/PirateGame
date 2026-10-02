@@ -136,6 +136,54 @@ class TestRandomOrderSolver(unittest.TestCase):
         np.testing.assert_allclose(strict.value(full), [5 / 6] * 6)
         np.testing.assert_allclose(lenient.value(full), [5 / 6] * 6)
 
+    def test_equilibrium_proposals_enumerate_tied_choices(self):
+        # 均等重み6人・宝石5個（無差別なら反対）: 5人の投票者はどれも値段2個で同値。
+        # 2人を買うので、買収先の選び方は C(5,2)=10 通り。提案者の手元はどれでも1個。
+        solver = RandomOrderSolver(6, 5, L=100.0, weights=[1.0] * 6)
+        proposals, affordable = solver.equilibrium_proposals(frozenset(range(6)), 0)
+        self.assertTrue(affordable)
+        self.assertEqual(len(proposals), 10)
+        for proposal in proposals:
+            self.assertEqual(sum(proposal), 5)
+            self.assertEqual(proposal[0], 1)
+            self.assertEqual(sorted(proposal[1:])[-2:], [2, 2])
+
+    def test_equilibrium_proposals_report_unaffordable(self):
+        # 5人・宝石1個は可決不能（test_unaffordable_subgame_makes_L_matter と同じ局面）
+        solver = RandomOrderSolver(5, 1, L=10.0, weights=[1.0] * 5)
+        proposals, affordable = solver.equilibrium_proposals(frozenset(range(5)), 0)
+        self.assertFalse(affordable)
+        self.assertEqual(proposals, [])
+
+    def test_equilibrium_votes_follow_the_tie_rule(self):
+        # 否決後の5人ゲームでの各自の価値はちょうど1個。
+        # 無差別なら反対の規則では1個では賛成せず、無差別なら賛成の規則では賛成する。
+        full = frozenset(range(6))
+        proposal = (1, 2, 2, 0, 0, 0)
+        strict = RandomOrderSolver(6, 5, L=100.0, weights=[1.0] * 6)
+        lenient = RandomOrderSolver(6, 5, L=100.0, weights=[1.0] * 6,
+                                    accept_when_indifferent=True)
+        strict_votes = strict.equilibrium_votes(full, 0, proposal)
+        lenient_votes = lenient.equilibrium_votes(full, 0, proposal)
+        self.assertTrue(strict_votes[0])  # 提案者は自分の提案に賛成する
+        self.assertTrue(strict_votes[1])  # 2個もらえば継続価値1個を上回る
+        self.assertFalse(strict_votes[3])  # 0個では反対
+        self.assertTrue(lenient_votes[1])
+        self.assertFalse(lenient_votes[3])
+        # ちょうど継続価値（1個）の投票者で2つの規則が食い違う
+        tie_proposal = (0, 1, 1, 1, 1, 1)
+        self.assertFalse(strict.equilibrium_votes(full, 0, tie_proposal)[1])
+        self.assertTrue(lenient.equilibrium_votes(full, 0, tie_proposal)[1])
+
+    def test_buy_plan_matches_proposal_outcome(self):
+        solver = RandomOrderSolver(6, 5, L=100.0, weights=[50.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+        full = frozenset(range(6))
+        plan = solver.buy_plan(full, 0)
+        payoff, passes, _ = solver.proposal_outcome(full, 0)
+        self.assertTrue(passes)
+        self.assertTrue(plan["affordable"])
+        self.assertAlmostEqual(payoff[0], 5 - plan["total_cost"])
+
     def test_rejects_mismatched_weights(self):
         with self.assertRaises(ValueError):
             RandomOrderSolver(3, 5, L=10.0, weights=[1.0, 1.0])

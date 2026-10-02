@@ -25,19 +25,23 @@ import sys
 L_RE = re.compile(r"命の重さ\(ペナルティ L\): (\S+)")
 
 
-def decompose(n, agent="A"):
+def decompose(n, agent="A", root="."):
     """(L, 平均報酬, 平均死亡率, 生存時の平均取り分, 死亡による損失) を返す。"""
-    result = f"result/result_{n}.txt"
-    metrics = f"log/log_metrics_{n}.csv"
+    result = os.path.join(root, f"result/result_{n}.txt")
+    metrics = os.path.join(root, f"log/log_metrics_{n}.csv")
     if not (os.path.exists(result) and os.path.exists(metrics)):
         return None
-    m = L_RE.search(open(result, encoding="utf-8").read())
+    with open(result, encoding="utf-8") as f:
+        m = L_RE.search(f.read())
     if not m:
         return None
     L = float(m.group(1))
 
     with open(metrics, encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
+    # エージェント数が少ない試行（n=3 など）には存在しない列がある
+    if not rows or f"rew_{agent}" not in rows[0]:
+        return None
     rews = [float(r[f"rew_{agent}"]) for r in rows]
     deaths = [float(r[f"death_{agent}"]) for r in rows]
     mean_r = sum(rews) / len(rews)

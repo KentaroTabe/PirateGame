@@ -15,6 +15,7 @@
 最適提案・投票の Q 値を返せるため、事前学習の教師として利用できる。
 """
 
+import itertools
 from math import ceil
 
 import numpy as np
@@ -243,6 +244,35 @@ class RandomOrderSolver:
         self._value_cache[alive] = v
         return v
 
+    def buy_plan(self, alive, proposer):
+        """提案者 proposer の買収計画。
+
+        Returns:
+            dict: needed（提案者以外に必要な票数）、prices（投票者ごとの値段）、
+            threshold（買収の境目の値段）、below（確実に買う投票者）、
+            tied（境目で同値のため無作為に選ばれる投票者）、slots（tied から買う人数）、
+            total_cost（支払い総額）、affordable（可決できるか）、cont（否決時の継続価値）。
+        """
+        alive = frozenset(alive)
+        voters = sorted(alive - {proposer})
+        needed = ceil(len(alive) / 2) - 1  # 提案者自身の賛成を除いた必要票数
+
+        if needed == 0:
+            return {"needed": 0, "prices": {}, "threshold": 0, "below": [], "tied": [],
+                    "slots": 0, "total_cost": 0, "affordable": True,
+                    "cont": np.zeros(self.n_agents, dtype=np.float64)}
+
+        cont = self.value(alive - {proposer})
+        prices = {i: _price(cont[i], self.accept_when_indifferent) for i in voters}
+        threshold = sorted(prices.values())[needed - 1]
+        below = [i for i in voters if prices[i] < threshold]
+        tied = [i for i in voters if prices[i] == threshold]
+        slots = needed - len(below)
+        total_cost = sum(prices[i] for i in below) + slots * threshold
+        return {"needed": needed, "prices": prices, "threshold": threshold, "below": below,
+                "tied": tied, "slots": slots, "total_cost": total_cost,
+                "affordable": total_cost <= self.total_gems, "cont": cont}
+
     def proposal_outcome(self, alive, proposer):
         """提案者 proposer が最適に提案したときの結果。
 
@@ -258,35 +288,27 @@ class RandomOrderSolver:
 
         payoff = np.zeros(self.n_agents, dtype=np.float64)
         yes_prob = np.zeros(self.n_agents, dtype=np.float64)
-        voters = sorted(alive - {proposer})
-        needed = ceil(len(alive) / 2) - 1  # 提案者自身の賛成を除いた必要票数
+        plan = self.buy_plan(alive, proposer)
 
-        if needed == 0:
+        if plan["needed"] == 0:
             payoff[proposer] = float(self.total_gems)
             result = (payoff, True, yes_prob)
             self._outcome_cache[key] = result
             return result
 
-        cont = self.value(alive - {proposer})
-        prices = {i: _price(cont[i], self.accept_when_indifferent) for i in voters}
-        threshold = sorted(prices.values())[needed - 1]
-        below = [i for i in voters if prices[i] < threshold]
-        tied = [i for i in voters if prices[i] == threshold]
-        slots = needed - len(below)
-        total_cost = sum(prices[i] for i in below) + slots * threshold
-
-        if total_cost > self.total_gems:
+        if not plan["affordable"]:
             # どの提案も可決できず、提案者は必ず脱落する
             for i in alive:
-                payoff[i] = cont[i]
+                payoff[i] = plan["cont"][i]
             payoff[proposer] = -self.L
             result = (payoff, False, yes_prob)
             self._outcome_cache[key] = result
             return result
 
-        share = slots / len(tied)
-        for i in below:
-            payoff[i] = float(prices[i])
+        threshold, tied = plan["threshold"], plan["tied"]
+        share = plan["slots"] / len(tied)
+        for i in plan["below"]:
+            payoff[i] = float(plan["prices"][i])
             yes_prob[i] = 1.0
         for i in tied:
             payoff[i] = threshold * share
@@ -294,8 +316,64 @@ class RandomOrderSolver:
             yes_prob[i] = 1.0 if threshold == 0 else share
 
         yes = 1 + int(round(yes_prob.sum()))
-        excess = max(0, yes - (needed + 1))
-        payoff[proposer] = self.total_gems - total_cost - self.excess_vote_penalty * excess
+        excess = max(0, yes - (plan["needed"] + 1))
+        payoff[proposer] = (self.total_gems - plan["total_cost"]
+                            - self.excess_vote_penalty * excess)
         result = (payoff, True, yes_prob)
         self._outcome_cache[key] = result
         return result
+
+    def equilibrium_proposals(self, alive, proposer, max_sets=64):
+        """均衡での最適提案の一覧（同じ値段の投票者のうち誰を買うかだけが異なる）。
+
+        誰を買うかは均衡では決まらないので、候補が複数になる
+        （Eraslan 2002: 定常均衡で一意なのは利得であって戦略ではない）。
+        学習後の提案との距離を測るときは、この一覧の中で最も近いものと比べる。
+
+        Returns:
+            (proposals, affordable): proposals は長さ n_agents のタプルの一覧。
+            可決できる提案が存在しない場合は ([], False) を返す。
+        """
+        alive = frozenset(alive)
+        plan = self.buy_plan(alive, proposer)
+        if not plan["affordable"]:
+            return [], False
+
+        if plan["needed"] == 0:
+            proposal = [0] * self.n_agents
+            proposal[proposer] = self.total_gems
+            return [tuple(proposal)], True
+
+        keep = self.total_gems - plan["total_cost"]
+        proposals = []
+        for extra in itertools.combinations(plan["tied"], plan["slots"]):
+            proposal = [0] * self.n_agents
+            for i in plan["below"]:
+                proposal[i] = plan["prices"][i]
+            for i in extra:
+                proposal[i] = plan["threshold"]
+            proposal[proposer] += keep
+            proposals.append(tuple(proposal))
+            if len(proposals) >= max_sets:
+                break
+        return proposals, True
+
+    def equilibrium_votes(self, alive, proposer, proposal):
+        """提示された分配案に対する、均衡での各生存者の投票（True=賛成）。
+
+        投票者は「可決時の取り分 ＞（または ≧）否決時の継続価値」で賛成する
+        （ピボタル仮定）。提案者は自分の提案に賛成する（否決されれば -L を負うため）。
+        """
+        alive = frozenset(alive)
+        votes = {}
+        cont = self.value(alive - {proposer}) if len(alive) > 1 else None
+        for i in alive:
+            if i == proposer:
+                votes[i] = True
+                continue
+            offer = float(proposal[i])
+            if self.accept_when_indifferent:
+                votes[i] = offer >= cont[i] - _INTEGER_TOLERANCE
+            else:
+                votes[i] = offer > cont[i] + _INTEGER_TOLERANCE
+        return votes

@@ -22,10 +22,13 @@ FIELDS = {
 AGENT = re.compile(r"- (agent_\w+): 平均報酬 ([+-][\d.]+) / 死亡率 ([\d.]+)%")
 
 
-def summarize(n):
-    path = f"result/result_{n}.txt"
+def summarize(n, root="."):
+    import os
+
+    path = os.path.join(root, f"result/result_{n}.txt")
     try:
-        text = open(path, encoding="utf-8").read()
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
     except FileNotFoundError:
         return None
 

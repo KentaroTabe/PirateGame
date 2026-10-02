@@ -15,8 +15,8 @@ import sys
 AGENTS = ["A", "B", "C", "D", "E", "F"]
 
 
-def summarize(n):
-    path = f"log/log_metrics_{n}.csv"
+def summarize(n, root="."):
+    path = os.path.join(root, f"log/log_metrics_{n}.csv")
     if not os.path.exists(path):
         return None
     with open(path, encoding="utf-8") as f:
