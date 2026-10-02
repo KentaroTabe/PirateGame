@@ -184,6 +184,73 @@ class TestScanReachability(unittest.TestCase):
         self.assertEqual(reachable, 900)
 
 
+class TestVotePriceAndReachableScan(unittest.TestCase):
+    """値段の指標と、到達可能な局面だけに絞った感応度。"""
+
+    CONFIG = {"num_agents": 4, "total_gems": 3, "L": 5.0,
+              "agent_weights": [2.0, 1.0, 1.0, 1.0], "fixed_order": False,
+              "observe_vote_tally": True}
+
+    def _save_fresh_policy(self, directory):
+        import torch
+        from train import build_policy_manager, get_args, get_env
+
+        env = get_env(self.CONFIG)
+        args = get_args()
+        args.device = "cpu"
+        _, policies = build_policy_manager(env, args)
+        agents = env.env.possible_agents
+        path = f"{directory}/policy.pth"
+        torch.save({a: policies[a].state_dict() for a in agents}, path)
+        return path
+
+    def test_price_metrics_are_in_range(self):
+        from tools.vote_price import measure
+
+        with tempfile.TemporaryDirectory() as d:
+            result = measure(self.CONFIG, self._save_fresh_policy(d))
+        self.assertGreater(result["n_contexts"], 0)
+        for key in ("share_never", "share_always", "tie_accept_share"):
+            if result[key] == result[key]:  # nan でなければ
+                self.assertGreaterEqual(result[key], 0.0)
+                self.assertLessEqual(result[key], 1.0)
+        if result["mean_price"] == result["mean_price"]:
+            self.assertGreaterEqual(result["mean_price"], 0.0)
+            self.assertLessEqual(result["mean_price"], self.CONFIG["total_gems"])
+
+    def test_reachable_only_scans_fewer_states(self):
+        from tools.vote_sensitivity import measure
+
+        with tempfile.TemporaryDirectory() as d:
+            path = self._save_fresh_policy(d)
+            full = measure(self.CONFIG, path)
+            reachable = measure(self.CONFIG, path, reachable_only=True)
+        # 到達可能な局面だけに絞れば走査数は減り、内訳の合計は全体と一致する
+        self.assertLess(reachable["n_comparisons"], full["n_comparisons"])
+        for r in (full, reachable):
+            self.assertEqual(r["n_decided"] + r["n_undecided"], r["n_comparisons"])
+
+    def test_decided_states_are_absent_without_tally(self):
+        from tools.vote_sensitivity import measure
+
+        config = dict(self.CONFIG, observe_vote_tally=False)
+        with tempfile.TemporaryDirectory() as d:
+            import torch
+            from train import build_policy_manager, get_args, get_env
+
+            env = get_env(config)
+            args = get_args()
+            args.device = "cpu"
+            _, policies = build_policy_manager(env, args)
+            agents = env.env.possible_agents
+            path = f"{d}/policy.pth"
+            torch.save({a: policies[a].state_dict() for a in agents}, path)
+            result = measure(config, path)
+        # 票数を観測しない設定では「決着済み」を判定できないので、すべて未決着に入る
+        self.assertEqual(result["n_decided"], 0)
+        self.assertEqual(result["n_undecided"], result["n_comparisons"])
+
+
 class TestEquilibriumDistance(unittest.TestCase):
     """均衡距離の指標が、意味のある範囲の値を返すこと。"""
 

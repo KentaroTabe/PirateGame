@@ -31,7 +31,8 @@ from eval import load_policy_manager
 from pretrain import _build_observation
 
 
-def measure(config, model_path, proposer="A", proposer_filter=None, rich_spread=False):
+def measure(config, model_path, proposer="A", proposer_filter=None, rich_spread=False,
+            reachable_only=False):
     """感応度と、比較に使った局面数を返す。
 
     proposer_filter に「提案者インデックス -> bool」を渡すと、
@@ -45,6 +46,13 @@ def measure(config, model_path, proposer="A", proposer_filter=None, rich_spread=
     「提案者が独占」「他者に均等」の2通りから
     「他者1人が総取り」の各パターンを加えたものに広げ、走査局面数を増やす。
     測定の精度を上げたいときに使う。**既定は False**（過去の全測定と同じ値を返す）。
+
+    reachable_only=True にすると、票数観測ありの設定で、
+    **対局で実際に現れる票の途中経過だけ**を走査する（投票順から投票済み人数が1通りに決まる）。
+    既定の False では全組み合わせを走査するので、6体では局面の83%が
+    学習中に一度も現れない観測になる（docs/discussion.md 6.1節）。
+    どちらの場合も、戻り値には「勝敗が決着済みの局面」と「未決着の局面」に分けた
+    感応度が入る（決着済みでは合理的な投票者は無差別なので、取り分に反応しなくてよい）。
     """
     env = PirateGemEnv(config)
     manager = load_policy_manager(config, model_path)
@@ -60,13 +68,40 @@ def measure(config, model_path, proposer="A", proposer_filter=None, rich_spread=
 
     # 走査する票の途中経過。票数観測が無効なら1通りで十分（観測に入らないため）。
     if env.observe_vote_tally:
-        tallies = [
+        all_tallies = [
             [float(yes), float(voted)]
             for voted in range(env.n_agents)
             for yes in range(voted + 1)
         ]
     else:
-        tallies = [None]
+        all_tallies = [None]
+
+    required = int(np.ceil(env.n_agents / 2))
+
+    def tallies_for(v_idx, prop_idx):
+        """この投票者・この提案者のもとで走査する票の途中経過。
+
+        reachable_only=True なら、投票順（env._build_voting_order() と同じ規則）から
+        決まる「投票済み人数」だけに絞る。全員生存の局面を走査しているので、
+        投票者の順番は提案者が誰かと proposer_votes_last だけで決まる。
+        """
+        if not env.observe_vote_tally or not reachable_only:
+            return all_tallies
+        order = list(range(env.n_agents))
+        if env.proposer_votes_last:
+            order.remove(prop_idx)
+            order.append(prop_idx)
+        voted = order.index(v_idx)
+        return [[float(yes), float(voted)] for yes in range(voted + 1)]
+
+    def is_decided(tally):
+        """その時点で勝敗が決まっているか（決まっていれば合理的な投票者は無差別）。"""
+        if tally is None:
+            return False
+        yes, voted = int(tally[0]), int(tally[1])
+        if yes >= required:
+            return True  # すでに可決が確定
+        return (voted - yes) > env.n_agents - required  # 残り全員が賛成しても届かない
 
     def vote(agent, prop_idx, dist, tally):
         obs = _build_observation(env, alive, prop_idx, tuple(dist), vote_tally=tally)
@@ -101,6 +136,7 @@ def measure(config, model_path, proposer="A", proposer_filter=None, rich_spread=
     to_yes = 0
     to_no = 0
     total = 0
+    split = {"decided": [0, 0, 0], "undecided": [0, 0, 0]}  # [賛成転換, 反対転換, 局面数]
     per_agent = {}
 
     for v_idx, agent in enumerate(agents):
@@ -112,17 +148,21 @@ def measure(config, model_path, proposer="A", proposer_filter=None, rich_spread=
             if proposer_filter is not None and not proposer_filter(prop_idx):
                 continue
             for spread in spreads:
-                for tally in tallies:
+                for tally in tallies_for(v_idx, prop_idx):
+                    bucket = split["decided" if is_decided(tally) else "undecided"]
                     for gems in range(env.total_gems):
                         low = build(v_idx, prop_idx, gems, spread)
                         high = build(v_idx, prop_idx, gems + 1, spread)
                         before = vote(agent, prop_idx, low, tally)
                         after = vote(agent, prop_idx, high, tally)
                         a_total += 1
+                        bucket[2] += 1
                         if after and not before:
                             a_yes += 1
+                            bucket[0] += 1
                         elif before and not after:
                             a_no += 1
+                            bucket[1] += 1
 
         per_agent[agent[-1]] = (a_yes - a_no) / a_total if a_total else 0.0
         to_yes += a_yes
@@ -130,9 +170,21 @@ def measure(config, model_path, proposer="A", proposer_filter=None, rich_spread=
         total += a_total
 
     sensitivity = (to_yes - to_no) / total if total else 0.0
+
+    def bucket_sensitivity(name):
+        yes, no, count = split[name]
+        return ((yes - no) / count if count else float("nan")), count
+
+    decided_sensitivity, n_decided = bucket_sensitivity("decided")
+    undecided_sensitivity, n_undecided = bucket_sensitivity("undecided")
+
     return {
         "sensitivity": sensitivity,
         "n_comparisons": total,
+        "sensitivity_decided": decided_sensitivity,
+        "n_decided": n_decided,
+        "sensitivity_undecided": undecided_sensitivity,
+        "n_undecided": n_undecided,
         "to_yes": to_yes,
         "to_no": to_no,
         "per_agent": per_agent,

@@ -34,9 +34,11 @@ def config_for(n):
     return m.group(1) if m else None
 
 
-def main(ns, csv_path=None):
+def main(ns, csv_path=None, reachable_only=False):
+    if reachable_only:
+        print("※ 対局で到達しうる票の途中経過だけを走査します")
     print(f"{'試行':>4} {'L':>5} {'宝石':>4} {'罰':>4} {'票数':>4} {'乱数':>4} "
-          f"{'種':>4} {'感応度':>9} {'局面数':>7}")
+          f"{'種':>4} {'感応度':>9} {'局面数':>7} {'決着済み':>9} {'未決着':>9}")
     rows = []
     for n in ns:
         cfg_path = config_for(n)
@@ -53,16 +55,24 @@ def main(ns, csv_path=None):
 
         with open(cfg_path, encoding="utf-8") as f:
             config = json.load(f)
-        r = measure(config, model)
+        r = measure(config, model, reachable_only=reachable_only)
+        decided = f"{r['sensitivity_decided']:>+9.4f}" if r["n_decided"] else f"{'---':>9}"
+        undecided = f"{r['sensitivity_undecided']:>+9.4f}" if r["n_undecided"] else f"{'---':>9}"
         print(
             f"{n:>4} {config.get('L', '-'):>5} {config.get('total_gems', '-'):>4} "
             f"{config.get('excess_vote_penalty', 0.0):>4} "
             f"{'あり' if config.get('observe_vote_tally') else 'なし':>4} "
             f"{config.get('observe_noise_dims', 0):>4} "
             f"{config.get('seed', '-'):>4} "
-            f"{r['sensitivity']:>+9.4f} {r['n_comparisons']:>7}"
+            f"{r['sensitivity']:>+9.4f} {r['n_comparisons']:>7} {decided} {undecided}"
         )
         rows.append({
+            "sensitivity_decided": round(r["sensitivity_decided"], 4) if r["n_decided"] else "",
+            "n_decided": r["n_decided"],
+            "sensitivity_undecided": (round(r["sensitivity_undecided"], 4)
+                                      if r["n_undecided"] else ""),
+            "n_undecided": r["n_undecided"],
+            "reachable_only": int(reachable_only),
             "trial": n,
             "config": os.path.basename(cfg_path),
             "L": config.get("L"),
@@ -99,6 +109,8 @@ if __name__ == "__main__":
     parser.add_argument("trials", nargs="*", type=int)
     parser.add_argument("--all", action="store_true", help="result/ にある全試行を対象にする")
     parser.add_argument("--csv", help="結果を書き出す CSV のパス")
+    parser.add_argument("--reachable-only", action="store_true",
+                        help="対局で到達しうる票の途中経過だけを走査する")
     cli = parser.parse_args()
     targets = all_trials() if cli.all else (cli.trials or list(range(46, 91)))
-    main(targets, csv_path=cli.csv)
+    main(targets, csv_path=cli.csv, reachable_only=cli.reachable_only)
