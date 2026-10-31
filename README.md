@@ -239,6 +239,7 @@ python export_onnx.py
 | 第31 | L=20 の谷は本物か（試行156〜159） | [`docs/reports/round31.md`](docs/reports/round31.md) |
 | 第32 | 未検証の項目を検証する（試行160〜171） | [`docs/reports/round32.md`](docs/reports/round32.md) |
 | 第33 | 到達局面の測定と計画の見直し（既存モデルの再解析） | [`docs/reports/round33.md`](docs/reports/round33.md) |
+| 第34 | 否決の罰の効果を要因分解する（試行172〜235） | [`docs/reports/round34.md`](docs/reports/round34.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。
