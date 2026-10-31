@@ -28,7 +28,12 @@ METRICS = ["proposal_l1", "self_gap", "coalition_gap", "vote_match_either",
            "mean_price", "gap_strict", "gap_cont", "share_never", "share_always",
            "tie_accept_share",
            # scripts/summarize_vote_sensitivity.py の CSV も同様
-           "sensitivity", "sensitivity_decided", "sensitivity_undecided"]
+           "sensitivity", "sensitivity_decided", "sensitivity_undecided",
+           # scripts/summarize_onpath_equilibrium.py の CSV も同様
+           "onpath_l1", "onpath_gap_strict", "onpath_gap_lenient",
+           "onpath_match_strict", "onpath_match_lenient", "onpath_match_either",
+           "first_reject", "expected_rejections",
+           "first_keep", "first_keep_strict", "first_keep_lenient"]
 # 厳密な両側 p 値は2群の全分割を数えるので、合計標本数がこれを超えると打ち切る
 EXACT_P_MAX_SAMPLES = 20
 
