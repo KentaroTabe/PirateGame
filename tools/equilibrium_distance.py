@@ -39,7 +39,7 @@ from tianshou.data import Batch
 from env import PirateGemEnv
 from eval import load_policy_manager
 from pretrain import _build_observation, _valid_dist_indices
-from solver import RandomOrderSolver
+from solver import NoEliminationSolver, RandomOrderSolver
 
 BATCH_ROWS = 4096
 
@@ -80,9 +80,94 @@ def _argmax_actions(policy, rows, masks):
     return out
 
 
+def measure_rounds(config, model_path):
+    """脱落なしの環境で、全回の局面について同じ指標を求める。"""
+    env = PirateGemEnv(config)
+    if env.observe_vote_tally:
+        raise ValueError("脱落なしの環境では票数観測つきの指標に対応していません")
+    policies = load_policy_manager(config, model_path).policies
+    agents = env.possible_agents
+    n = env.n_agents
+    weights = list(env.agent_weights)
+    strict, lenient = (NoEliminationSolver(n, env.total_gems, env.L, weights, env.max_rounds,
+                                           accept_when_indifferent=rule)
+                       for rule in (False, True))
+    everyone = frozenset(range(n))
+    zero = (0,) * n
+    propose_mask = np.zeros(env.TOTAL_ACTIONS, dtype=bool)
+    propose_mask[:len(env.DISTRIBUTIONS)] = True
+    vote_mask = np.zeros(env.TOTAL_ACTIONS, dtype=bool)
+    vote_mask[env.ACTION_YES] = True
+    vote_mask[env.ACTION_NO] = True
+
+    l1s, gaps, coalitions = [], [], []
+    rows = {a: [] for a in agents}
+    truth = {a: [] for a in agents}
+    for round_index in range(env.max_rounds):
+        for proposer in range(n):
+            obs = _build_observation(env, everyone, proposer, zero, round_index=round_index)
+            action = _argmax_actions(policies[agents[proposer]], [obs], [propose_mask])[0]
+            learned = env.DISTRIBUTIONS[action]
+            equilibria, _ = strict.equilibrium_proposals(round_index, proposer)
+            l1s.append(min(sum(abs(learned[i] - e[i]) for i in range(n)) for e in equilibria))
+            gaps.append(learned[proposer] - equilibria[0][proposer])
+            coalitions.append(sum(1 for i in range(n) if i != proposer and learned[i] > 0)
+                              - sum(1 for i in range(n) if i != proposer and equilibria[0][i] > 0))
+            for proposal in env.DISTRIBUTIONS:
+                s_votes = strict.equilibrium_votes(round_index, proposer, proposal)
+                l_votes = lenient.equilibrium_votes(round_index, proposer, proposal)
+                for voter in range(n):
+                    rows[agents[voter]].append(_build_observation(
+                        env, everyone, proposer, proposal, round_index=round_index))
+                    truth[agents[voter]].append((s_votes[voter], l_votes[voter], round_index == 0))
+
+    counts = _count_vote_matches(env, policies, agents, rows, truth, vote_mask)
+    return _distance_result(env, l1s, gaps, coalitions, counts, {})
+
+
+def _count_vote_matches(env, policies, agents, rows, truth, vote_mask):
+    """投票の一致数を (反対寄り, 賛成寄り, どちらか, 総数, 初回のどちらか, 初回の総数) で返す。"""
+    strict_hits = lenient_hits = either_hits = total = first_hits = first_total = 0
+    for agent in agents:
+        if not rows[agent]:
+            continue
+        masks = [vote_mask] * len(rows[agent])
+        actions = _argmax_actions(policies[agent], rows[agent], masks)
+        for (s_vote, l_vote, is_first), action in zip(truth[agent], actions):
+            learned_yes = action == env.ACTION_YES
+            strict_hits += int(learned_yes == s_vote)
+            lenient_hits += int(learned_yes == l_vote)
+            hit = int(learned_yes in (s_vote, l_vote))
+            either_hits += hit
+            total += 1
+            if is_first:
+                first_hits += hit
+                first_total += 1
+    return strict_hits, lenient_hits, either_hits, total, first_hits, first_total
+
+
+def _distance_result(env, l1_all, gap_all, coalition_all, counts, per_agent):
+    strict_hits, lenient_hits, either_hits, total, first_hits, first_total = counts
+    return {
+        "proposal_l1": float(np.mean(l1_all)) if l1_all else float("nan"),
+        "self_gap": float(np.mean(gap_all)) if gap_all else float("nan"),
+        "coalition_gap": float(np.mean(coalition_all)) if coalition_all else float("nan"),
+        "vote_match_strict": strict_hits / total if total else float("nan"),
+        "vote_match_lenient": lenient_hits / total if total else float("nan"),
+        "vote_match_either": either_hits / total if total else float("nan"),
+        "vote_match_first": first_hits / first_total if first_total else float("nan"),
+        "n_proposal_states": len(l1_all),
+        "n_vote_states": total,
+        "max_proposal_l1": 2 * env.total_gems,
+        "per_agent": per_agent,
+    }
+
+
 def measure(config, model_path):
     """提案の距離・自分の取り分の差・投票の一致率・連合の大きさの乖離を返す。"""
     env = PirateGemEnv(config)
+    if not env.eliminate_on_reject:
+        return measure_rounds(config, model_path)
     manager = load_policy_manager(config, model_path)
     policies = manager.policies
     agents = env.possible_agents
@@ -154,32 +239,11 @@ def measure(config, model_path):
                     vote_rows[agent].append(
                         _build_observation(env, alive, proposer, proposal, vote_tally=tally))
                     vote_masks[agent].append(vote_mask.copy())
-                    vote_truth[agent].append((s_votes[voter], l_votes[voter]))
+                    vote_truth[agent].append(
+                        (s_votes[voter], l_votes[voter], len(alive) == n))
 
-    strict_hits = lenient_hits = either_hits = total_votes = 0
-    for agent in agents:
-        if not vote_rows[agent]:
-            continue
-        actions = _argmax_actions(policies[agent], vote_rows[agent], vote_masks[agent])
-        for (s_vote, l_vote), action in zip(vote_truth[agent], actions):
-            learned_yes = action == env.ACTION_YES
-            strict_hits += int(learned_yes == s_vote)
-            lenient_hits += int(learned_yes == l_vote)
-            either_hits += int(learned_yes in (s_vote, l_vote))
-            total_votes += 1
-
-    return {
-        "proposal_l1": float(np.mean(l1_all)) if l1_all else float("nan"),
-        "self_gap": float(np.mean(self_gap_all)) if self_gap_all else float("nan"),
-        "coalition_gap": float(np.mean(coalition_gap_all)) if coalition_gap_all else float("nan"),
-        "vote_match_strict": strict_hits / total_votes if total_votes else float("nan"),
-        "vote_match_lenient": lenient_hits / total_votes if total_votes else float("nan"),
-        "vote_match_either": either_hits / total_votes if total_votes else float("nan"),
-        "n_proposal_states": len(l1_all),
-        "n_vote_states": total_votes,
-        "max_proposal_l1": 2 * gems,
-        "per_agent": per_agent,
-    }
+    counts = _count_vote_matches(env, policies, agents, vote_rows, vote_truth, vote_mask)
+    return _distance_result(env, l1_all, self_gap_all, coalition_gap_all, counts, per_agent)
 
 
 def main():

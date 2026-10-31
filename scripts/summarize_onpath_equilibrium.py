@@ -20,7 +20,8 @@ from summarize_equilibrium_distance import all_trials, config_of  # noqa: E402
 from tools.onpath_equilibrium import measure  # noqa: E402
 
 CONDITION_FIELDS = ["trial", "config", "num_agents", "total_gems", "L", "weights", "penalty",
-                    "vote_tally", "proposer_last", "noise_dims", "pretrain", "seed"]
+                    "vote_tally", "proposer_last", "noise_dims", "pretrain", "seed",
+                    "eliminate", "reward_scale", "max_rounds"]
 METRIC_FIELDS = ["onpath_l1", "onpath_gap_strict", "onpath_gap_lenient",
                  "onpath_match_strict", "onpath_match_lenient", "onpath_match_either",
                  "first_reject", "expected_rejections",
@@ -52,6 +53,9 @@ def row_for(trial):
         "noise_dims": int(config.get("observe_noise_dims", 0)),
         "pretrain": int(bool(config.get("pretrain", True))),
         "seed": config.get("seed", 42),
+        "eliminate": int(bool(config.get("eliminate_on_reject", True))),
+        "reward_scale": config.get("reward_scale", 1.0),
+        "max_rounds": config.get("max_rounds", ""),
     }
     row.update({key: round(result[key], 4) for key in METRIC_FIELDS})
     return row, None

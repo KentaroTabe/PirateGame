@@ -60,6 +60,16 @@ class PirateGemEnv(AECEnv):
         self.observe_noise_dims = int(config.get("observe_noise_dims", 0))
         if self.observe_noise_dims < 0:
             raise ValueError("observe_noise_dims は0以上で指定してください")
+        # False なら Baron-Ferejohn 型: 否決された提案者は -L を負って残り、次の回へ進む。
+        # 提案回数が max_rounds に達すると、誰も宝石を得ずに終わる。
+        self.eliminate_on_reject = bool(config.get("eliminate_on_reject", True))
+        self.max_rounds = int(config.get("max_rounds", max(self.n_agents - 1, 1)))
+        if self.max_rounds < 1:
+            raise ValueError("max_rounds は1以上で指定してください")
+        # 全報酬に掛ける定数。戦略的には同じゲームのまま、報酬の桁だけを変える。
+        self.reward_scale = float(config.get("reward_scale", 1.0))
+        if self.reward_scale <= 0:
+            raise ValueError("reward_scale は正の値で指定してください")
 
         self.possible_agents = [f"agent_{chr(65 + i)}" for i in range(self.n_agents)]
         self.agent_name_mapping = dict(zip(self.possible_agents, range(self.n_agents)))
@@ -86,6 +96,8 @@ class PirateGemEnv(AECEnv):
         obs_dim = 4 * self.n_agents
         if self.observe_vote_tally:
             obs_dim += self.VOTE_TALLY_DIM
+        if not self.eliminate_on_reject:
+            obs_dim += 1  # 上限つきのゲームでは残り回数が状態の一部になる
         obs_dim += self.observe_noise_dims
         obs_high = float(max(100, self.total_gems))
         self.observation_spaces = {
@@ -127,6 +139,7 @@ class PirateGemEnv(AECEnv):
         self.votes = {}
         self.voting_order = []
         self.event_log = []
+        self.round_index = 0
 
         self.proposer = self._select_next_proposer()
         self.phase = PHASE_PROPOSE
@@ -141,6 +154,8 @@ class PirateGemEnv(AECEnv):
         features = alive_flag + weights + proposer_onehot + proposal
         if self.observe_vote_tally:
             features = features + self._vote_tally()
+        if not self.eliminate_on_reject:
+            features = features + [float(self.round_index)]
         if self.observe_noise_dims:
             features = features + list(
                 self._noise_rng.random(self.observe_noise_dims).astype(float)
@@ -253,14 +268,28 @@ class PirateGemEnv(AECEnv):
                     reward = float(self.current_proposal[i])
                     if a == self.proposer:
                         reward -= self.excess_vote_penalty * max(0, yes_count - required_votes)
-                    self.rewards[a] = reward
+                    self.rewards[a] = reward * self.reward_scale
             for a in self.agents:
                 self.terminations[a] = True
             return
 
+        if not self.eliminate_on_reject:
+            # 否決: 提案者は罰を負うが残り、次の回へ進む
+            self.rewards[self.proposer] = -self.L * self.reward_scale
+            self.round_index += 1
+            if self.round_index >= self.max_rounds:
+                for a in self.agents:
+                    self.terminations[a] = True
+                return
+            self.proposer = self._select_next_proposer()
+            self.current_proposal = (0,) * self.n_agents
+            self.phase = PHASE_PROPOSE
+            self.agent_selection = self.proposer
+            return
+
         # 否決: 提案者は海に落とされる
         self.event_log.append({"type": "eliminated", "agent": self.proposer})
-        self.rewards[self.proposer] = -self.L
+        self.rewards[self.proposer] = -self.L * self.reward_scale
         self.alive[self.proposer] = False
         self.terminations[self.proposer] = True
 
@@ -272,7 +301,7 @@ class PirateGemEnv(AECEnv):
         elif len(remaining) == 1:
             winner = remaining[0]
             self.event_log.append({"type": "last_survivor", "agent": winner})
-            self.rewards[winner] = float(self.total_gems)
+            self.rewards[winner] = float(self.total_gems) * self.reward_scale
             for a in self.agents:
                 self.terminations[a] = True
         else:

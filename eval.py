@@ -140,7 +140,8 @@ def run_game(policy_manager=None, config=None, model_path='policy.pth', seed=Non
             obs, reward, termination, truncation, info = raw_env.last()
 
             if termination or truncation:
-                final_rewards[agent] = reward
+                # 報酬の縮尺を戻し、どの条件の結果も宝石の単位で記録する
+                final_rewards[agent] = reward / raw_env.reward_scale
                 raw_env.step(None)
                 continue
 

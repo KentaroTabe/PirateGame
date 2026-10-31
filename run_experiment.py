@@ -115,6 +115,9 @@ def run_experiment(config_path="config.json"):
     # 終端報酬が全エージェントの全遷移に届くようにする(実質モンテカルロリターン)
     n = config.get("num_agents", 5)
     args.n_step = n * (n + 1) // 2 + n - 2
+    if not config.get("eliminate_on_reject", True):
+        # 脱落なしでは全員が毎回投票するので、1回あたり「提案1 + 投票 n」ステップかかる
+        args.n_step = config.get("max_rounds", max(n - 1, 1)) * (n + 1)
 
     print(f"💡 【自動調整】エポック数: {epochs}")
     print(f"    - 乱数シード: {args.seed}")

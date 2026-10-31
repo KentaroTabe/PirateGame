@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compare_cells import mann_whitney_u  # noqa: E402
 
 METRICS = ["proposal_l1", "self_gap", "coalition_gap", "vote_match_either",
-           "vote_match_strict", "vote_match_lenient",
+           "vote_match_strict", "vote_match_lenient", "vote_match_first",
            # scripts/summarize_vote_price.py の CSV もこのスクリプトで群比較できる
            "mean_price", "gap_strict", "gap_cont", "share_never", "share_always",
            "tie_accept_share",

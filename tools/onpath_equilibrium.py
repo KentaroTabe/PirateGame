@@ -22,7 +22,10 @@ from tianshou.data import Batch
 from env import PirateGemEnv
 from eval import load_policy_manager
 from pretrain import _build_observation, _valid_dist_indices
-from solver import RandomOrderSolver
+from solver import NoEliminationSolver, RandomOrderSolver
+
+RECORD_FIELDS = ["onpath_match_either", "onpath_l1", "first_reject", "expected_rejections",
+                 "first_keep"]
 
 
 def voting_order(alive, proposer, proposer_votes_last):
@@ -66,10 +69,42 @@ def walk(n_agents, weights, propose, vote, proposer_votes_last=False):
                     voted += 1
                 passed = yes >= ceil(size / 2)
                 visits.append({"alive": alive, "proposer": proposer, "prob": p_proposer,
-                               "proposal": proposal, "votes": votes, "passed": passed})
+                               "proposal": proposal, "votes": votes, "passed": passed,
+                               "first": size == n_agents})
                 if not passed:
                     key = (alive - {proposer}, (float(yes), float(voted)))
                     reach[key] = reach.get(key, 0.0) + p_proposer
+    return visits
+
+
+def walk_rounds(n_agents, weights, max_rounds, propose, vote):
+    """脱落なしの環境で到達しうる全局面を列挙する。
+
+    局面の鍵は回の番号で、`alive` の欄に入れる（solver の引数と同じ扱いにするため）。
+    propose は (round_index, proposer)、vote は (round_index, proposer, voter, proposal)。
+    """
+    visits = []
+    total_weight = sum(weights)
+    reach = 1.0
+    required = ceil(n_agents / 2)
+    for round_index in range(max_rounds):
+        rejected = 0.0
+        for proposer in range(n_agents):
+            p_proposer = reach * weights[proposer] / total_weight
+            if p_proposer == 0.0:
+                continue
+            proposal = propose(round_index, proposer)
+            votes = {voter: vote(round_index, proposer, voter, proposal)
+                     for voter in range(n_agents)}
+            passed = sum(votes.values()) >= required
+            visits.append({"alive": round_index, "proposer": proposer, "prob": p_proposer,
+                           "proposal": proposal, "votes": votes, "passed": passed,
+                           "first": round_index == 0})
+            if not passed:
+                rejected += p_proposer
+        reach = rejected
+        if reach == 0.0:
+            break
     return visits
 
 
@@ -104,7 +139,7 @@ def summarize(visits, strict, lenient):
 
         if not v["passed"]:
             expected_rejections += prob
-        if len(alive) == n_agents:
+        if v["first"]:
             first += prob
             rejected += prob * (not v["passed"])
             first_keep += prob * proposal[proposer]
@@ -132,10 +167,21 @@ def _greedy(policy, obs, mask):
         return int(policy(batch).act[0])
 
 
-def measure(config, model_path):
-    """保存済みモデルの到達局面での指標を返す。"""
-    env = PirateGemEnv(config)
-    policies = load_policy_manager(config, model_path).policies
+def make_solvers(env):
+    """（無差別なら反対, 無差別なら賛成）の2つの均衡を返す。"""
+    weights = [float(w) for w in env.agent_weights]
+    if not env.eliminate_on_reject:
+        return tuple(NoEliminationSolver(env.n_agents, env.total_gems, env.L, weights,
+                                         env.max_rounds, accept_when_indifferent=rule)
+                     for rule in (False, True))
+    return tuple(RandomOrderSolver(env.n_agents, env.total_gems, env.L, weights,
+                                   excess_vote_penalty=env.excess_vote_penalty,
+                                   accept_when_indifferent=rule)
+                 for rule in (False, True))
+
+
+def measure_policies(env, policies, solvers):
+    """方策の辞書から到達局面での指標を求める。"""
     agents = env.possible_agents
     zero = (0,) * env.n_agents
     vote_mask = np.zeros(env.TOTAL_ACTIONS, dtype=bool)
@@ -156,14 +202,49 @@ def measure(config, model_path):
         return _greedy(policies[agents[voter]], obs, vote_mask) == env.ACTION_YES
 
     weights = [float(w) for w in env.agent_weights]
-    visits = walk(env.n_agents, weights, propose, vote, env.proposer_votes_last)
-    solvers = [
-        RandomOrderSolver(env.n_agents, env.total_gems, env.L, weights,
-                          excess_vote_penalty=env.excess_vote_penalty,
-                          accept_when_indifferent=rule)
-        for rule in (False, True)
-    ]
+    if env.eliminate_on_reject:
+        visits = walk(env.n_agents, weights, propose, vote, env.proposer_votes_last)
+        return summarize(visits, solvers[0], solvers[1])
+
+    if env.observe_vote_tally:
+        raise ValueError("脱落なしの環境では票数観測つきの指標に対応していません")
+    everyone = frozenset(range(env.n_agents))
+    all_mask = np.zeros(env.TOTAL_ACTIONS, dtype=bool)
+    all_mask[:len(env.DISTRIBUTIONS)] = True
+
+    def propose_round(round_index, proposer):
+        obs = _build_observation(env, everyone, proposer, zero, round_index=round_index)
+        return env.DISTRIBUTIONS[_greedy(policies[agents[proposer]], obs, all_mask)]
+
+    def vote_round(round_index, proposer, voter, proposal):
+        obs = _build_observation(env, everyone, proposer, proposal, round_index=round_index)
+        return _greedy(policies[agents[voter]], obs, vote_mask) == env.ACTION_YES
+
+    visits = walk_rounds(env.n_agents, weights, env.max_rounds, propose_round, vote_round)
     return summarize(visits, solvers[0], solvers[1])
+
+
+class OnPathRecorder:
+    """学習中の到達局面の指標を CSV に書く。方策を読むだけで学習には影響しない。"""
+
+    def __init__(self, env, path):
+        self.env = env
+        self.path = path
+        self.solvers = make_solvers(env)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(",".join(["epoch"] + RECORD_FIELDS) + "\n")
+
+    def record(self, epoch, policies):
+        result = measure_policies(self.env, policies, self.solvers)
+        with open(self.path, "a", encoding="utf-8") as f:
+            f.write(",".join([str(epoch)] + [f"{result[k]:.4f}" for k in RECORD_FIELDS]) + "\n")
+
+
+def measure(config, model_path):
+    """保存済みモデルの到達局面での指標を返す。"""
+    env = PirateGemEnv(config)
+    policies = load_policy_manager(config, model_path).policies
+    return measure_policies(env, policies, make_solvers(env))
 
 
 def main():

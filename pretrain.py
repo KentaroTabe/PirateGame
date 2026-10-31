@@ -19,11 +19,12 @@ from network import Net
 from solver import FixedOrderSolver
 
 
-def _build_observation(env, alive_set, proposer, proposal, vote_tally=None):
+def _build_observation(env, alive_set, proposer, proposal, vote_tally=None, round_index=0):
     """env.observe() と同一フォーマットの観測ベクトルを構築する。
 
     env.observe_vote_tally が有効な場合は末尾に投票の途中経過を足す。
     vote_tally 未指定なら「まだ誰も投票していない」= [0, 0] とみなす。
+    脱落なしの環境では round_index（これまでの否決回数）も足す。
     """
     alive_flag = [1.0 if i in alive_set else 0.0 for i in range(env.n_agents)]
     weights = list(env.agent_weights)
@@ -37,6 +38,9 @@ def _build_observation(env, alive_set, proposer, proposal, vote_tally=None):
                 f"vote_tally の長さ {len(tally)} が VOTE_TALLY_DIM {env.VOTE_TALLY_DIM} と一致しません"
             )
         features = features + tally
+
+    if not env.eliminate_on_reject:
+        features = features + [float(round_index)]
 
     # 乱数次元は無意味な入力なので、読み出し時は 0 で埋める
     # （env.observe() では実際の乱数が入る）。
@@ -163,6 +167,11 @@ def pretrain_agents(config, device="cpu", hidden_sizes=(128, 128),
         raise ValueError(
             "observe_noise_dims が有効なときは事前学習を使えません"
             "（一般解は乱数次元を扱わないため）。pretrain を false にしてください。"
+        )
+    if not env.eliminate_on_reject or env.reward_scale != 1.0:
+        raise ValueError(
+            "脱落なしの環境と reward_scale では事前学習を使えません"
+            "（一般解の目標値は脱落あり・縮尺1の定義です）。pretrain を false にしてください。"
         )
     solver = FixedOrderSolver(env.n_agents, env.total_gems, env.L, env.excess_vote_penalty)
 

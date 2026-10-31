@@ -184,6 +184,109 @@ def _price(continuation, accept_when_indifferent=False):
     return int(np.floor(continuation + _INTEGER_TOLERANCE)) + 1
 
 
+def _purchase_plan(voters, needed, cont, total_gems, accept_when_indifferent):
+    """継続価値 cont のもとで、必要票を最も安く買う計画を返す。"""
+    prices = {i: _price(cont[i], accept_when_indifferent) for i in voters}
+    threshold = sorted(prices.values())[needed - 1]
+    below = [i for i in voters if prices[i] < threshold]
+    tied = [i for i in voters if prices[i] == threshold]
+    slots = needed - len(below)
+    total_cost = sum(prices[i] for i in below) + slots * threshold
+    return {"needed": needed, "prices": prices, "threshold": threshold, "below": below,
+            "tied": tied, "slots": slots, "total_cost": total_cost,
+            "affordable": total_cost <= total_gems, "cont": cont}
+
+
+def _proposals_from_plan(plan, proposer, n_agents, total_gems):
+    """買収計画から、均衡の分配案の候補をすべて作る。"""
+    keep = total_gems - plan["total_cost"]
+    proposals = []
+    for extra in itertools.combinations(plan["tied"], plan["slots"]):
+        proposal = [0] * n_agents
+        for i in plan["below"]:
+            proposal[i] = plan["prices"][i]
+        for i in extra:
+            proposal[i] = plan["threshold"]
+        proposal[proposer] += keep
+        proposals.append(tuple(proposal))
+    return proposals
+
+
+class NoEliminationSolver:
+    """脱落なしの有限回交渉（Baron-Ferejohn 型）の部分ゲーム完全均衡ソルバー。
+
+    否決された提案者は -L を負って残り、次の回に全員から提案者が選び直される。
+    max_rounds 回で合意できなければ誰も宝石を得ない。回についての帰納法で解く。
+    投票と買収の規則は RandomOrderSolver と同じである。提案者は自分の提案に賛成する
+    （-L を負って残るより可決を選ぶ。L が宝石数以上なら必ず成り立つ）。
+    局面は回の番号 round_index で表す。
+    """
+
+    def __init__(self, n_agents, total_gems, L, weights, max_rounds,
+                 accept_when_indifferent=False):
+        if len(weights) != n_agents:
+            raise ValueError(f"weights の長さ {len(weights)} が n_agents {n_agents} と一致しません")
+        self.n_agents = n_agents
+        self.total_gems = total_gems
+        self.L = float(L)
+        self.weights = np.asarray(weights, dtype=np.float64)
+        self.max_rounds = max_rounds
+        self.accept_when_indifferent = bool(accept_when_indifferent)
+        self._value_cache = {}
+
+    def buy_plan(self, round_index, proposer):
+        voters = [i for i in range(self.n_agents) if i != proposer]
+        needed = ceil(self.n_agents / 2) - 1
+        return _purchase_plan(voters, needed, self.value(round_index + 1),
+                              self.total_gems, self.accept_when_indifferent)
+
+    def _proposer_outcome(self, round_index, proposer):
+        plan = self.buy_plan(round_index, proposer)
+        cont = plan["cont"]
+        payoff = np.zeros(self.n_agents, dtype=np.float64)
+        if not plan["affordable"]:
+            payoff[:] = cont
+            payoff[proposer] -= self.L
+            return payoff
+        share = plan["slots"] / len(plan["tied"])
+        for i in plan["below"]:
+            payoff[i] = float(plan["prices"][i])
+        for i in plan["tied"]:
+            payoff[i] = plan["threshold"] * share
+        payoff[proposer] = self.total_gems - plan["total_cost"]
+        return payoff
+
+    def value(self, round_index):
+        """その回の提案者が選ばれる前の期待価値。上限を超えたら全員0。"""
+        if round_index >= self.max_rounds:
+            return np.zeros(self.n_agents, dtype=np.float64)
+        if round_index not in self._value_cache:
+            probs = self.weights / self.weights.sum()
+            self._value_cache[round_index] = sum(
+                probs[p] * self._proposer_outcome(round_index, p) for p in range(self.n_agents))
+        return self._value_cache[round_index]
+
+    def equilibrium_proposals(self, round_index, proposer, max_sets=64):
+        plan = self.buy_plan(round_index, proposer)
+        if not plan["affordable"]:
+            return [], False
+        proposals = _proposals_from_plan(plan, proposer, self.n_agents, self.total_gems)
+        return proposals[:max_sets], True
+
+    def equilibrium_votes(self, round_index, proposer, proposal):
+        """提示された分配案に対する、均衡での各エージェントの投票（True=賛成）。"""
+        cont = self.value(round_index + 1)
+        votes = {}
+        for i in range(self.n_agents):
+            if i == proposer:
+                votes[i] = True
+            elif self.accept_when_indifferent:
+                votes[i] = float(proposal[i]) >= cont[i] - _INTEGER_TOLERANCE
+            else:
+                votes[i] = float(proposal[i]) > cont[i] + _INTEGER_TOLERANCE
+        return votes
+
+
 class RandomOrderSolver:
     """ランダム順（権力ウェイト比例）の海賊ゲームを解く部分ゲーム完全均衡ソルバー。
 
@@ -262,16 +365,8 @@ class RandomOrderSolver:
                     "slots": 0, "total_cost": 0, "affordable": True,
                     "cont": np.zeros(self.n_agents, dtype=np.float64)}
 
-        cont = self.value(alive - {proposer})
-        prices = {i: _price(cont[i], self.accept_when_indifferent) for i in voters}
-        threshold = sorted(prices.values())[needed - 1]
-        below = [i for i in voters if prices[i] < threshold]
-        tied = [i for i in voters if prices[i] == threshold]
-        slots = needed - len(below)
-        total_cost = sum(prices[i] for i in below) + slots * threshold
-        return {"needed": needed, "prices": prices, "threshold": threshold, "below": below,
-                "tied": tied, "slots": slots, "total_cost": total_cost,
-                "affordable": total_cost <= self.total_gems, "cont": cont}
+        return _purchase_plan(voters, needed, self.value(alive - {proposer}),
+                              self.total_gems, self.accept_when_indifferent)
 
     def proposal_outcome(self, alive, proposer):
         """提案者 proposer が最適に提案したときの結果。
@@ -344,19 +439,8 @@ class RandomOrderSolver:
             proposal[proposer] = self.total_gems
             return [tuple(proposal)], True
 
-        keep = self.total_gems - plan["total_cost"]
-        proposals = []
-        for extra in itertools.combinations(plan["tied"], plan["slots"]):
-            proposal = [0] * self.n_agents
-            for i in plan["below"]:
-                proposal[i] = plan["prices"][i]
-            for i in extra:
-                proposal[i] = plan["threshold"]
-            proposal[proposer] += keep
-            proposals.append(tuple(proposal))
-            if len(proposals) >= max_sets:
-                break
-        return proposals, True
+        proposals = _proposals_from_plan(plan, proposer, self.n_agents, self.total_gems)
+        return proposals[:max_sets], True
 
     def equilibrium_votes(self, alive, proposer, proposal):
         """提示された分配案に対する、均衡での各生存者の投票（True=賛成）。

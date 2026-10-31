@@ -270,6 +270,99 @@ class TestDesignPower(unittest.TestCase):
         self.assertLess(self._power(16, 0.0), 0.15)
 
 
+class TestRound34Analysis(unittest.TestCase):
+    """第34ラウンドの判定式を、値が手で求まるセルで固定する。"""
+
+    def _cells(self):
+        # D は脱落あり・縮尺なしで 0.4、それ以外で 0.1
+        return {
+            (1, 5, False): [0.9, 0.9], (1, 100, False): [0.5, 0.5],
+            (0, 5, False): [0.8, 0.8], (0, 100, False): [0.7, 0.7],
+            (1, 5, True): [0.8, 0.8], (1, 100, True): [0.7, 0.7],
+            (0, 5, True): [0.8, 0.8], (0, 100, True): [0.7, 0.7],
+        }
+
+    def test_contrasts_match_hand_calculation(self):
+        from analyze_r34 import contrast, contrast_weights
+
+        cells = self._cells()
+        self.assertAlmostEqual(contrast(cells, contrast_weights("C1")), 0.3)
+        self.assertAlmostEqual(contrast(cells, contrast_weights("C2")), 0.3)
+        self.assertAlmostEqual(contrast(cells, contrast_weights("C3")), 0.3)
+
+    def test_interval_collapses_without_spread(self):
+        from analyze_r34 import bootstrap_interval, contrast_weights
+
+        low, high = bootstrap_interval(self._cells(), contrast_weights("C1"), resamples=100)
+        self.assertAlmostEqual(low, 0.3)
+        self.assertAlmostEqual(high, 0.3)
+
+
+class TestNoEliminationMetrics(unittest.TestCase):
+    """脱落なしの環境でも指標が測れ、記録が学習中に書かれること。"""
+
+    CONFIG = {"num_agents": 3, "total_gems": 2, "L": 5.0, "agent_weights": [2.0, 1.0, 1.0],
+              "fixed_order": False, "eliminate_on_reject": False, "max_rounds": 2}
+
+    def _policies(self):
+        from train import build_policy_manager, get_args, get_env
+
+        env = get_env(self.CONFIG)
+        args = get_args()
+        args.device = "cpu"
+        _, policies = build_policy_manager(env, args)
+        return env, policies
+
+    def test_walk_rounds_stops_after_agreement(self):
+        from tools.onpath_equilibrium import walk_rounds
+
+        visits = walk_rounds(3, [2.0, 1.0, 1.0], 2, lambda t, p: (2, 0, 0),
+                             lambda *args: True)
+        self.assertTrue(all(v["alive"] == 0 for v in visits))
+        self.assertAlmostEqual(sum(v["prob"] for v in visits), 1.0)
+
+    def test_walk_rounds_reaches_the_next_round_after_rejection(self):
+        from tools.onpath_equilibrium import walk_rounds
+
+        visits = walk_rounds(3, [2.0, 1.0, 1.0], 2, lambda t, p: (2, 0, 0),
+                             lambda *args: False)
+        self.assertEqual({v["alive"] for v in visits}, {0, 1})
+        self.assertAlmostEqual(sum(v["prob"] for v in visits), 2.0)
+
+    def test_distance_and_onpath_measures_run(self):
+        import torch
+
+        from tools.equilibrium_distance import measure as distance
+        from tools.onpath_equilibrium import measure as onpath
+
+        env, policies = self._policies()
+        agents = env.env.possible_agents
+        with tempfile.TemporaryDirectory() as d:
+            path = f"{d}/policy.pth"
+            torch.save({a: policies[a].state_dict() for a in agents}, path)
+            far = distance(self.CONFIG, path)
+            near = onpath(self.CONFIG, path)
+        self.assertEqual(far["n_proposal_states"], 6)
+        self.assertGreaterEqual(far["vote_match_first"], 0.0)
+        self.assertLessEqual(far["vote_match_first"], 1.0)
+        self.assertGreaterEqual(near["onpath_match_either"], 0.0)
+
+    def test_recorder_writes_one_row_per_call(self):
+        from tools.onpath_equilibrium import OnPathRecorder
+
+        env, policies = self._policies()
+        with tempfile.TemporaryDirectory() as d:
+            path = f"{d}/log_onpath_1.csv"
+            recorder = OnPathRecorder(env.env, path)
+            recorder.record(10, policies)
+            recorder.record(20, policies)
+            with open(path, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        self.assertEqual(len(lines), 3)
+        self.assertTrue(lines[0].startswith("epoch,"))
+        self.assertTrue(lines[2].startswith("20,"))
+
+
 class TestOnPathEquilibrium(unittest.TestCase):
     """到達局面の列挙と指標。ネットワークを使わず、方策を関数で与えて確かめる。"""
 

@@ -145,7 +145,8 @@ def record_proposer_votes(policies, env, agents):
     return votes
 
 
-def collect_political_metrics(policy_manager, policies, test_collector, agents, n_episode):
+def collect_political_metrics(policy_manager, policies, test_collector, agents, n_episode,
+                              reward_scale=1.0):
     """貪欲方策（ε=0）で評価対局を行い、政治的指標を集計する。
 
     Returns:
@@ -162,7 +163,8 @@ def collect_political_metrics(policy_manager, policies, test_collector, agents, 
     rews = np.asarray(result["rews"])  # (エピソード数, エージェント数)
     lens = np.asarray(result["lens"])
     return {
-        "rew_mean": rews.mean(axis=0),
+        # 報酬の縮尺を戻し、どの条件のログも宝石の単位で比べられるようにする
+        "rew_mean": rews.mean(axis=0) / reward_scale,
         "death_rate": (rews < 0).mean(axis=0),  # 負の報酬 = 否決されて死亡
         "len_mean": float(lens.mean()),
         # 最初の提案で決着 = 1提案 + 全員投票 = (エージェント数 + 1) ステップ
@@ -221,6 +223,11 @@ def train_agent(args=None, config=None, model_path='policy.pth',
         # エポック単位でイテレートし、一定間隔で政治的指標をCSVに記録する
         result = {}
         names = [a.split('_')[1] for a in agents]
+        onpath_recorder = None
+        if config is not None and config.get("record_onpath", False):
+            from tools.onpath_equilibrium import OnPathRecorder
+            onpath_recorder = OnPathRecorder(
+                env.env, metrics_path.replace("log_metrics_", "log_onpath_"))
         with open(metrics_path, "w", encoding="utf-8") as mf:
             header = (
                 ["epoch", "env_step", "len_mean", "first_pass_rate"]
@@ -234,7 +241,10 @@ def train_agent(args=None, config=None, model_path='policy.pth',
                 if epoch % metrics_interval == 0 or epoch == args.epoch:
                     m = collect_political_metrics(
                         policy_manager, policies, test_collector, agents, metrics_episodes,
+                        reward_scale=env.env.reward_scale,
                     )
+                    if onpath_recorder is not None:
+                        onpath_recorder.record(epoch, policies)
                     row = (
                         [epoch, epoch_stat["env_step"], m["len_mean"], m["first_pass_rate"]]
                         + list(m["rew_mean"]) + list(m["death_rate"])
