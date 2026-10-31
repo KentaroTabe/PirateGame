@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from solver import FixedOrderSolver, RandomOrderSolver
+from solver import FixedOrderSolver, NoEliminationSolver, RandomOrderSolver
 
 
 class TestClassicPirateGame(unittest.TestCase):
@@ -75,6 +75,42 @@ class TestInfeasibleProposal(unittest.TestCase):
         proposal, passes = solver.optimal_proposal(frozenset(range(6)), proposer=0)
         self.assertTrue(passes)
         self.assertTrue(solver.optimal_vote(frozenset(range(6)), 0, proposal, 1))
+
+
+class TestNoEliminationSolver(unittest.TestCase):
+    """脱落なしの有限回交渉。手計算で導ける値と、L への不変性を確かめる。"""
+
+    def test_last_round_voters_are_cheap(self):
+        # 最終回は否決されると全員0。3人なら他の1人を1個で買えば足りる（無差別なら反対）
+        solver = NoEliminationSolver(3, 4, L=5.0, weights=[1.0] * 3, max_rounds=1)
+        proposals, affordable = solver.equilibrium_proposals(0, 0)
+        self.assertTrue(affordable)
+        self.assertEqual(len(proposals), 2)
+        self.assertEqual(proposals[0][0], 3)
+        np.testing.assert_allclose(solver.value(0), [4 / 3] * 3)
+
+    def test_lenient_last_round_keeps_everything(self):
+        solver = NoEliminationSolver(3, 4, L=5.0, weights=[1.0] * 3, max_rounds=1,
+                                     accept_when_indifferent=True)
+        proposals, _ = solver.equilibrium_proposals(0, 0)
+        self.assertEqual(proposals[0][0], 4)
+
+    def test_values_do_not_depend_on_L(self):
+        for weights in ([1.0] * 6, [50.0, 1.0, 1.0, 1.0, 1.0, 1.0]):
+            low = NoEliminationSolver(6, 5, 5.0, weights, max_rounds=5).value(0)
+            high = NoEliminationSolver(6, 5, 100.0, weights, max_rounds=5).value(0)
+            np.testing.assert_allclose(low, high)
+            self.assertAlmostEqual(low.sum(), 5.0)
+
+    def test_recognition_raises_value_without_elimination(self):
+        # 脱落がないので、選出確率の高い提案者は否決後も有利なまま価値が高い
+        value = NoEliminationSolver(6, 5, 100.0, [50.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                                    max_rounds=5).value(0)
+        self.assertGreater(value[0], value[1])
+
+    def test_rejects_mismatched_weights(self):
+        with self.assertRaises(ValueError):
+            NoEliminationSolver(3, 5, 10.0, [1.0, 1.0], max_rounds=2)
 
 
 class TestRandomOrderSolver(unittest.TestCase):

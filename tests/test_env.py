@@ -342,6 +342,75 @@ class TestEnvRules(unittest.TestCase):
         self.assertTrue(all(env.terminations.values()))
 
 
+class TestNoEliminationAndScale(unittest.TestCase):
+    """脱落なしの環境と報酬の縮尺。既定では従来の挙動が変わらないことも守る。"""
+
+    def _propose(self, env, dist):
+        env.step(env.DISTRIBUTIONS.index(tuple(dist)))
+
+    def _reject_all(self, env):
+        while env.phase == "VOTE":
+            before = env.round_index
+            env.step(env.ACTION_NO)
+            if env.round_index != before:
+                break
+
+    def test_defaults_keep_the_original_game(self):
+        env = make_env()
+        env.reset(seed=0)
+        self.assertTrue(env.eliminate_on_reject)
+        self.assertEqual(env.reward_scale, 1.0)
+        self.assertEqual(env.observation_space("agent_A")["observation"].shape, (12,))
+
+    def test_rejected_proposer_stays_and_pays(self):
+        env = make_env(eliminate_on_reject=False, max_rounds=3, L=2.0)
+        env.reset(seed=0)
+        self._propose(env, (4, 0, 0))
+        self._reject_all(env)
+        self.assertTrue(env.alive["agent_A"])
+        self.assertFalse(env.terminations["agent_A"])
+        self.assertEqual(env.rewards["agent_A"], -2.0)
+        self.assertEqual(env.round_index, 1)
+        self.assertEqual(env.phase, "PROPOSE")
+        self.assertEqual(env.observe("agent_A")["observation"][-1], 1.0)
+
+    def test_game_ends_with_nothing_after_max_rounds(self):
+        env = make_env(eliminate_on_reject=False, max_rounds=2, L=2.0)
+        env.reset(seed=0)
+        for _ in range(2):
+            self._propose(env, (4, 0, 0))
+            self._reject_all(env)
+        self.assertTrue(all(env.terminations.values()))
+        self.assertEqual(env._cumulative_rewards["agent_A"], -4.0)
+        self.assertEqual(env._cumulative_rewards["agent_B"], 0.0)
+
+    def test_reward_scale_applies_to_gems_and_penalty(self):
+        env = make_env(reward_scale=0.5, L=2.0)
+        env.reset(seed=0)
+        self._propose(env, (4, 0, 0))
+        env.step(env.ACTION_YES)
+        env.step(env.ACTION_NO)
+        env.step(env.ACTION_NO)
+        self.assertEqual(env.rewards["agent_A"], -1.0)
+
+        env.reset(seed=0)
+        self._propose(env, (2, 1, 1))
+        for _ in range(3):
+            env.step(env.ACTION_YES)
+        self.assertEqual(env.rewards["agent_A"], 1.0)
+
+    def test_observation_helper_matches_env(self):
+        from pretrain import _build_observation
+
+        env = make_env(eliminate_on_reject=False, max_rounds=3)
+        env.reset(seed=0)
+        self._propose(env, (4, 0, 0))
+        self._reject_all(env)
+        proposer = env.agent_name_mapping[env.proposer]
+        built = _build_observation(env, {0, 1, 2}, proposer, (0, 0, 0), round_index=1)
+        self.assertEqual(list(built), list(env.observe(env.proposer)["observation"]))
+
+
 class TestSensitivityProposerFilter(unittest.TestCase):
     """提案者フィルタは走査を分割するだけで、全体の比較数を保つ。
 

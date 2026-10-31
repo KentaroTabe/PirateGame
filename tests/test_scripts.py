@@ -184,6 +184,275 @@ class TestScanReachability(unittest.TestCase):
         self.assertEqual(reachable, 900)
 
 
+class TestVotePriceAndReachableScan(unittest.TestCase):
+    """値段の指標と、到達可能な局面だけに絞った感応度。"""
+
+    CONFIG = {"num_agents": 4, "total_gems": 3, "L": 5.0,
+              "agent_weights": [2.0, 1.0, 1.0, 1.0], "fixed_order": False,
+              "observe_vote_tally": True}
+
+    def _save_fresh_policy(self, directory):
+        import torch
+        from train import build_policy_manager, get_args, get_env
+
+        env = get_env(self.CONFIG)
+        args = get_args()
+        args.device = "cpu"
+        _, policies = build_policy_manager(env, args)
+        agents = env.env.possible_agents
+        path = f"{directory}/policy.pth"
+        torch.save({a: policies[a].state_dict() for a in agents}, path)
+        return path
+
+    def test_price_metrics_are_in_range(self):
+        from tools.vote_price import measure
+
+        with tempfile.TemporaryDirectory() as d:
+            result = measure(self.CONFIG, self._save_fresh_policy(d))
+        self.assertGreater(result["n_contexts"], 0)
+        for key in ("share_never", "share_always", "tie_accept_share"):
+            if result[key] == result[key]:  # nan でなければ
+                self.assertGreaterEqual(result[key], 0.0)
+                self.assertLessEqual(result[key], 1.0)
+        if result["mean_price"] == result["mean_price"]:
+            self.assertGreaterEqual(result["mean_price"], 0.0)
+            self.assertLessEqual(result["mean_price"], self.CONFIG["total_gems"])
+
+    def test_reachable_only_scans_fewer_states(self):
+        from tools.vote_sensitivity import measure
+
+        with tempfile.TemporaryDirectory() as d:
+            path = self._save_fresh_policy(d)
+            full = measure(self.CONFIG, path)
+            reachable = measure(self.CONFIG, path, reachable_only=True)
+        # 到達可能な局面だけに絞れば走査数は減り、内訳の合計は全体と一致する
+        self.assertLess(reachable["n_comparisons"], full["n_comparisons"])
+        for r in (full, reachable):
+            self.assertEqual(r["n_decided"] + r["n_undecided"], r["n_comparisons"])
+
+    def test_decided_states_are_absent_without_tally(self):
+        from tools.vote_sensitivity import measure
+
+        config = dict(self.CONFIG, observe_vote_tally=False)
+        with tempfile.TemporaryDirectory() as d:
+            import torch
+            from train import build_policy_manager, get_args, get_env
+
+            env = get_env(config)
+            args = get_args()
+            args.device = "cpu"
+            _, policies = build_policy_manager(env, args)
+            agents = env.env.possible_agents
+            path = f"{d}/policy.pth"
+            torch.save({a: policies[a].state_dict() for a in agents}, path)
+            result = measure(config, path)
+        # 票数を観測しない設定では「決着済み」を判定できないので、すべて未決着に入る
+        self.assertEqual(result["n_decided"], 0)
+        self.assertEqual(result["n_undecided"], result["n_comparisons"])
+
+
+class TestDesignPower(unittest.TestCase):
+    """検出力の見積もりが、効果と標本数に対して正しい向きに動くこと。"""
+
+    LOW = [0.90, 0.92, 0.95, 0.97, 0.88, 0.93, 0.96, 0.91]
+    HIGH = [0.50, 0.60, 0.70, 0.55, 0.65, 0.45, 0.75, 0.58]
+
+    def _power(self, n, shrink):
+        from estimate_design_power import difference_of_differences_power
+
+        return difference_of_differences_power(self.LOW, self.HIGH, n, shrink, 4000, 1.96)
+
+    def test_power_grows_with_effect_and_samples(self):
+        self.assertGreater(self._power(8, 1.0), self._power(8, 0.25))
+        self.assertGreater(self._power(16, 0.5), self._power(8, 0.5))
+
+    def test_no_effect_rarely_detects(self):
+        self.assertLess(self._power(16, 0.0), 0.15)
+
+
+class TestRound34Analysis(unittest.TestCase):
+    """第34ラウンドの判定式を、値が手で求まるセルで固定する。"""
+
+    def _cells(self):
+        # D は脱落あり・縮尺なしで 0.4、それ以外で 0.1
+        return {
+            (1, 5, False): [0.9, 0.9], (1, 100, False): [0.5, 0.5],
+            (0, 5, False): [0.8, 0.8], (0, 100, False): [0.7, 0.7],
+            (1, 5, True): [0.8, 0.8], (1, 100, True): [0.7, 0.7],
+            (0, 5, True): [0.8, 0.8], (0, 100, True): [0.7, 0.7],
+        }
+
+    def test_contrasts_match_hand_calculation(self):
+        from analyze_r34 import contrast, contrast_weights
+
+        cells = self._cells()
+        self.assertAlmostEqual(contrast(cells, contrast_weights("C1")), 0.3)
+        self.assertAlmostEqual(contrast(cells, contrast_weights("C2")), 0.3)
+        self.assertAlmostEqual(contrast(cells, contrast_weights("C3")), 0.3)
+
+    def test_interval_collapses_without_spread(self):
+        from analyze_r34 import bootstrap_interval, contrast_weights
+
+        low, high = bootstrap_interval(self._cells(), contrast_weights("C1"), resamples=100)
+        self.assertAlmostEqual(low, 0.3)
+        self.assertAlmostEqual(high, 0.3)
+
+
+class TestNoEliminationMetrics(unittest.TestCase):
+    """脱落なしの環境でも指標が測れ、記録が学習中に書かれること。"""
+
+    CONFIG = {"num_agents": 3, "total_gems": 2, "L": 5.0, "agent_weights": [2.0, 1.0, 1.0],
+              "fixed_order": False, "eliminate_on_reject": False, "max_rounds": 2}
+
+    def _policies(self):
+        from train import build_policy_manager, get_args, get_env
+
+        env = get_env(self.CONFIG)
+        args = get_args()
+        args.device = "cpu"
+        _, policies = build_policy_manager(env, args)
+        return env, policies
+
+    def test_walk_rounds_stops_after_agreement(self):
+        from tools.onpath_equilibrium import walk_rounds
+
+        visits = walk_rounds(3, [2.0, 1.0, 1.0], 2, lambda t, p: (2, 0, 0),
+                             lambda *args: True)
+        self.assertTrue(all(v["alive"] == 0 for v in visits))
+        self.assertAlmostEqual(sum(v["prob"] for v in visits), 1.0)
+
+    def test_walk_rounds_reaches_the_next_round_after_rejection(self):
+        from tools.onpath_equilibrium import walk_rounds
+
+        visits = walk_rounds(3, [2.0, 1.0, 1.0], 2, lambda t, p: (2, 0, 0),
+                             lambda *args: False)
+        self.assertEqual({v["alive"] for v in visits}, {0, 1})
+        self.assertAlmostEqual(sum(v["prob"] for v in visits), 2.0)
+
+    def test_distance_and_onpath_measures_run(self):
+        import torch
+
+        from tools.equilibrium_distance import measure as distance
+        from tools.onpath_equilibrium import measure as onpath
+
+        env, policies = self._policies()
+        agents = env.env.possible_agents
+        with tempfile.TemporaryDirectory() as d:
+            path = f"{d}/policy.pth"
+            torch.save({a: policies[a].state_dict() for a in agents}, path)
+            far = distance(self.CONFIG, path)
+            near = onpath(self.CONFIG, path)
+        self.assertEqual(far["n_proposal_states"], 6)
+        self.assertGreaterEqual(far["vote_match_first"], 0.0)
+        self.assertLessEqual(far["vote_match_first"], 1.0)
+        self.assertGreaterEqual(near["onpath_match_either"], 0.0)
+
+    def test_recorder_writes_one_row_per_call(self):
+        from tools.onpath_equilibrium import OnPathRecorder
+
+        env, policies = self._policies()
+        with tempfile.TemporaryDirectory() as d:
+            path = f"{d}/log_onpath_1.csv"
+            recorder = OnPathRecorder(env.env, path)
+            recorder.record(10, policies)
+            recorder.record(20, policies)
+            with open(path, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        self.assertEqual(len(lines), 3)
+        self.assertTrue(lines[0].startswith("epoch,"))
+        self.assertTrue(lines[2].startswith("20,"))
+
+
+class TestOnPathEquilibrium(unittest.TestCase):
+    """到達局面の列挙と指標。ネットワークを使わず、方策を関数で与えて確かめる。"""
+
+    WEIGHTS = [2.0, 1.0, 1.0]
+
+    def _solvers(self):
+        from solver import RandomOrderSolver
+
+        return (RandomOrderSolver(3, 2, 5.0, self.WEIGHTS),
+                RandomOrderSolver(3, 2, 5.0, self.WEIGHTS, accept_when_indifferent=True))
+
+    def test_equilibrium_play_scores_perfectly(self):
+        from tools.onpath_equilibrium import summarize, walk
+
+        strict, lenient = self._solvers()
+
+        def propose(alive, proposer, stale):
+            return strict.equilibrium_proposals(alive, proposer)[0][0]
+
+        def vote(alive, proposer, voter, proposal, tally):
+            return strict.equilibrium_votes(alive, proposer, proposal)[voter]
+
+        visits = walk(3, self.WEIGHTS, propose, vote)
+        self.assertAlmostEqual(sum(v["prob"] for v in visits), 1.0)
+        self.assertTrue(all(v["passed"] for v in visits))
+        result = summarize(visits, strict, lenient)
+        self.assertAlmostEqual(result["onpath_l1"], 0.0)
+        self.assertAlmostEqual(result["onpath_gap_strict"], 0.0)
+        self.assertAlmostEqual(result["onpath_match_strict"], 1.0)
+        self.assertAlmostEqual(result["first_reject"], 0.0)
+        self.assertAlmostEqual(result["expected_rejections"], 0.0)
+
+    def test_rejections_follow_recognition_probabilities(self):
+        from tools.onpath_equilibrium import summarize, walk
+
+        strict, lenient = self._solvers()
+
+        # 全員が常に反対: 3人で必ず否決され、2人でも必ず否決されて1人残る
+        def propose(alive, proposer, stale):
+            dist = [0, 0, 0]
+            dist[proposer] = 2
+            return tuple(dist)
+
+        visits = walk(3, self.WEIGHTS, propose, lambda *args: False)
+        first = [v for v in visits if len(v["alive"]) == 3]
+        self.assertEqual({v["proposer"]: v["prob"] for v in first}, {0: 0.5, 1: 0.25, 2: 0.25})
+        # A が否決された後の {B, C} は重みが等しいので 0.5 ずつ
+        after_a = [v for v in visits if v["alive"] == frozenset({1, 2})]
+        self.assertAlmostEqual(sum(v["prob"] for v in after_a), 0.5)
+        self.assertAlmostEqual(after_a[0]["prob"], 0.25)
+        result = summarize(visits, strict, lenient)
+        self.assertAlmostEqual(result["first_reject"], 1.0)
+        self.assertAlmostEqual(result["expected_rejections"], 2.0)
+
+    def test_tally_counts_earlier_votes_in_order(self):
+        from tools.onpath_equilibrium import walk
+
+        seen = {}
+
+        def vote(alive, proposer, voter, proposal, tally):
+            seen[voter] = tally
+            return True
+
+        walk(3, [1.0, 0.0, 0.0], lambda *args: (2, 0, 0), vote, proposer_votes_last=True)
+        # 提案者 A が末尾に回るので B→C→A の順で、賛成数が積み上がる
+        self.assertEqual(seen, {1: (0.0, 0.0), 2: (1.0, 1.0), 0: (2.0, 2.0)})
+
+    def test_measure_runs_on_a_saved_model(self):
+        import torch
+
+        from tools.onpath_equilibrium import measure
+        from train import build_policy_manager, get_args, get_env
+
+        config = {"num_agents": 3, "total_gems": 2, "L": 5.0, "agent_weights": self.WEIGHTS,
+                  "fixed_order": False, "observe_vote_tally": True}
+        env = get_env(config)
+        args = get_args()
+        args.device = "cpu"
+        _, policies = build_policy_manager(env, args)
+        agents = env.env.possible_agents
+        with tempfile.TemporaryDirectory() as d:
+            path = f"{d}/policy.pth"
+            torch.save({a: policies[a].state_dict() for a in agents}, path)
+            result = measure(config, path)
+        self.assertGreaterEqual(result["onpath_match_either"], 0.0)
+        self.assertLessEqual(result["onpath_match_either"], 1.0)
+        self.assertGreaterEqual(result["first_reject"], 0.0)
+        self.assertLessEqual(result["first_reject"], 1.0)
+
+
 class TestEquilibriumDistance(unittest.TestCase):
     """均衡距離の指標が、意味のある範囲の値を返すこと。"""
 

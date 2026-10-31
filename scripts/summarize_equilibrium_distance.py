@@ -30,8 +30,9 @@ RESULT_GLOB_RE = re.compile(r"result_(\d+)\.txt$")
 FIELDS = [
     "trial", "config", "num_agents", "total_gems", "L", "weights", "penalty",
     "vote_tally", "proposer_last", "noise_dims", "pretrain", "seed",
+    "eliminate", "reward_scale", "max_rounds",
     "proposal_l1", "self_gap", "coalition_gap",
-    "vote_match_strict", "vote_match_lenient", "vote_match_either",
+    "vote_match_strict", "vote_match_lenient", "vote_match_either", "vote_match_first",
     "n_proposal_states", "n_vote_states",
 ]
 
@@ -80,12 +81,16 @@ def row_for(trial):
         "noise_dims": int(config.get("observe_noise_dims", 0)),
         "pretrain": int(bool(config.get("pretrain", True))),
         "seed": config.get("seed", 42),
+        "eliminate": int(bool(config.get("eliminate_on_reject", True))),
+        "reward_scale": config.get("reward_scale", 1.0),
+        "max_rounds": config.get("max_rounds", ""),
         "proposal_l1": round(result["proposal_l1"], 4),
         "self_gap": round(result["self_gap"], 4),
         "coalition_gap": round(result["coalition_gap"], 4),
         "vote_match_strict": round(result["vote_match_strict"], 4),
         "vote_match_lenient": round(result["vote_match_lenient"], 4),
         "vote_match_either": round(result["vote_match_either"], 4),
+        "vote_match_first": round(result["vote_match_first"], 4),
         "n_proposal_states": result["n_proposal_states"],
         "n_vote_states": result["n_vote_states"],
     }, None

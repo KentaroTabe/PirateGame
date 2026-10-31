@@ -189,7 +189,9 @@ python export_onnx.py
 
 **この研究で何が分かったかは [`docs/results.md`](docs/results.md) にまとめています。**
 罰の重さ $L$・権力構造・観測の設計が投票行動をどう変えるか、
-31ラウンド・159試行を通じて現在支持されている結論だけを載せています。
+32ラウンド・171試行を通じて現在支持されている結論だけを載せています。
+
+**今後の研究計画は [`docs/proposal.md`](docs/proposal.md) にまとめています。**
 
 **それらの結果がなぜ生じるのかの考察は [`docs/discussion.md`](docs/discussion.md) にまとめています。**
 合理的な基準解では L が結果を変えないこと、権力が負債になる仕組み、
@@ -235,6 +237,9 @@ python export_onnx.py
 | 第29 | 残っている n=1 の主張を検証する（試行136〜147） | [`docs/reports/round29.md`](docs/reports/round29.md) |
 | 第30 | 未解決の問い3つに答える（試行148〜155） | [`docs/reports/round30.md`](docs/reports/round30.md) |
 | 第31 | L=20 の谷は本物か（試行156〜159） | [`docs/reports/round31.md`](docs/reports/round31.md) |
+| 第32 | 未検証の項目を検証する（試行160〜171） | [`docs/reports/round32.md`](docs/reports/round32.md) |
+| 第33 | 到達局面の測定と計画の見直し（既存モデルの再解析） | [`docs/reports/round33.md`](docs/reports/round33.md) |
+| 第34 | 否決の罰の効果を要因分解する（試行172〜235） | [`docs/reports/round34.md`](docs/reports/round34.md) |
 
 各ラウンドの設定ファイルは [`configs/`](configs/) にあり、
 `scripts/run_weight_experiments.sh <設定ファイル...>` で直列実行できます。
